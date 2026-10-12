@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Song Requests · {{EVENT_NAME}}</title>
   <style>
-    :root { --bg: #0f0b1e; --card: #1b1533; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
+    :root { --bg: #0f0b1e; --card: #1b1533; --field: #120e24; --line: #3a3160; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--text);
       background: radial-gradient(circle at 20% 0%, #3a1d6e 0, transparent 50%), radial-gradient(circle at 100% 100%, #5a1240 0, transparent 45%), var(--bg); }
@@ -16,14 +16,34 @@
     form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
     label { display: block; font-size: .85rem; font-weight: 600; margin: 14px 0 6px; color: var(--muted); }
     label:first-child { margin-top: 0; }
-    input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid #3a3160; background: #120e24; color: var(--text); font-size: 1rem; }
+    input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--text); font-size: 1rem; }
     input:focus, textarea:focus { outline: 2px solid var(--accent2); border-color: transparent; }
     textarea { resize: vertical; min-height: 60px; }
     .opt { font-weight: 400; opacity: .7; }
     .hp { position: absolute; left: -9999px; }
-    button { width: 100%; margin-top: 20px; padding: 14px; font-size: 1.05rem; font-weight: 700; color: #fff; border: 0; border-radius: 12px; cursor: pointer;
+    [hidden] { display: none !important; }
+
+    .search { position: relative; }
+    .results { list-style: none; margin: 6px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); max-height: 340px; overflow-y: auto; }
+    .results li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
+    .results li:hover, .results li.active { background: #2a2250; }
+    .results li.info { color: var(--muted); cursor: default; font-size: .9rem; }
+    .results li.info:hover { background: none; }
+    .art { width: 44px; height: 44px; border-radius: 6px; flex: none; background: #2a2250; object-fit: cover; }
+    .meta { min-width: 0; }
+    .meta b, .meta span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta span { color: var(--muted); font-size: .85rem; }
+    .e { display: inline-block; font-size: .65rem; font-weight: 700; background: var(--muted); color: var(--field); border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 2px; }
+
+    .picked { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--accent2); border-radius: 12px; background: var(--field); }
+    .picked .art { width: 56px; height: 56px; }
+    .picked .meta { flex: 1; }
+    .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; text-decoration: underline; }
+    .hint { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
+
+    button.submit { width: 100%; margin-top: 20px; padding: 14px; font-size: 1.05rem; font-weight: 700; color: #fff; border: 0; border-radius: 12px; cursor: pointer;
       background: linear-gradient(90deg, var(--accent), var(--accent2)); }
-    button:disabled { opacity: .6; cursor: wait; }
+    button.submit:disabled { opacity: .6; cursor: wait; }
     #msg { margin-top: 14px; min-height: 1.4em; text-align: center; font-weight: 600; }
     #msg.ok { color: var(--ok); } #msg.err { color: var(--err); }
     .count { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 18px; }
@@ -34,12 +54,36 @@
   <h1>🎶 Request a song for <span>{{EVENT_NAME}}</span></h1>
   <p class="sub">Drop the tracks you want to hear. Add as many as you like!</p>
 
-  <form id="f" autocomplete="off">
-    <label for="artist">Artist</label>
-    <input id="artist" name="artist" maxlength="120" required placeholder="e.g. Daft Punk">
+  <form id="f" autocomplete="off" novalidate>
+    <!-- Step 1: search the catalog -->
+    <div id="searchBox">
+      <label for="q">Search for a song</label>
+      <div class="search">
+        <input id="q" type="search" placeholder="Song or artist, e.g. One More Time" enterkeyhint="search"
+               role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list">
+        <ul id="results" class="results" role="listbox" hidden></ul>
+      </div>
+      <p class="hint">Can't find it? <button type="button" class="link" id="manualBtn">Type it in yourself</button></p>
+    </div>
 
-    <label for="title">Song title</label>
-    <input id="title" name="title" maxlength="160" required placeholder="e.g. One More Time">
+    <!-- The song picked from search -->
+    <div id="pickedBox" hidden>
+      <label>Your song</label>
+      <div class="picked">
+        <img class="art" id="pArt" alt="">
+        <div class="meta"><b id="pTitle"></b><span id="pSub"></span></div>
+        <button type="button" class="link" id="changeBtn">Change</button>
+      </div>
+    </div>
+
+    <!-- Manual fallback -->
+    <div id="manualBox" hidden>
+      <label for="artist">Artist</label>
+      <input id="artist" name="artist" maxlength="120" placeholder="e.g. Daft Punk">
+      <label for="title">Song title</label>
+      <input id="title" name="title" maxlength="160" placeholder="e.g. One More Time">
+      <p class="hint"><button type="button" class="link" id="backBtn">← Back to search</button></p>
+    </div>
 
     <label for="name">Your name <span class="opt">(optional)</span></label>
     <input id="name" name="name" maxlength="60" placeholder="So the DJ can shout you out">
@@ -49,41 +93,132 @@
 
     <input class="hp" name="website" tabindex="-1" aria-hidden="true">
 
-    <button id="btn" type="submit">Send request</button>
+    <button class="submit" id="btn" type="submit">Send request</button>
     <div id="msg" role="status"></div>
   </form>
   <p class="count" id="count"></p>
 </main>
 <script>
-  const f = document.getElementById('f');
-  const msg = document.getElementById('msg');
-  const btn = document.getElementById('btn');
-  const countEl = document.getElementById('count');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  const f = $('f'), q = $('q'), list = $('results'), msg = $('msg');
+  const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
+  let mode = 'search'; // 'search' | 'picked' | 'manual'
+  let picked = null;
+  let tracks = [];
+  let active = -1;
+  let timer, searchSeq = 0;
   let sent = 0;
 
   try { f.name.value = localStorage.getItem('guestName') || ''; } catch {}
 
+  function setMode(m) {
+    mode = m;
+    $('searchBox').hidden = m !== 'search';
+    $('pickedBox').hidden = m !== 'picked';
+    $('manualBox').hidden = m !== 'manual';
+    closeList();
+  }
+
+  function closeList() { list.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; }
+  function showInfo(text, withManual) {
+    list.innerHTML = `<li class="info">${esc(text)}${withManual ? ' <button type="button" class="link" data-manual>Type it in yourself</button>' : ''}</li>`;
+    list.hidden = false;
+  }
+
+  function render() {
+    if (!tracks.length) return showInfo('No songs found. Try different words, or', true);
+    list.innerHTML = tracks.map((t, i) => `
+      <li role="option" data-i="${i}" class="${i === active ? 'active' : ''}">
+        <img class="art" src="${esc(t.artwork) || BLANK}" alt="" loading="lazy">
+        <div class="meta"><b>${esc(t.title)}${t.explicit ? '<span class="e">E</span>' : ''}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
+      </li>`).join('');
+    list.hidden = false;
+    q.setAttribute('aria-expanded', 'true');
+  }
+
+  async function search(term) {
+    const seq = ++searchSeq;
+    try {
+      const res = await fetch('/api/search?q=' + encodeURIComponent(term));
+      const body = await res.json();
+      if (seq !== searchSeq || mode !== 'search') return; // a newer search is on its way
+      if (!res.ok) throw new Error(body.error);
+      tracks = body; active = -1; render();
+    } catch {
+      if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
+    }
+  }
+
+  function pick(t) {
+    picked = t;
+    $('pArt').src = t.artwork || BLANK;
+    $('pTitle').textContent = t.title;
+    $('pSub').textContent = t.artist + (t.album ? ' · ' + t.album : '');
+    setMode('picked');
+    msg.textContent = '';
+  }
+
+  q.addEventListener('input', () => {
+    clearTimeout(timer);
+    const term = q.value.trim();
+    if (term.length < 2) { searchSeq++; return closeList(); }
+    showInfo('Searching…');
+    timer = setTimeout(() => search(term), 300);
+  });
+  q.addEventListener('keydown', (e) => {
+    if (list.hidden || !tracks.length) return;
+    if (e.key === 'ArrowDown') { active = Math.min(active + 1, tracks.length - 1); render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(tracks[Math.max(active, 0)]); }
+    else if (e.key === 'Escape') closeList();
+  });
+  list.addEventListener('click', (e) => {
+    if (e.target.closest('[data-manual]')) return startManual();
+    const li = e.target.closest('li[data-i]');
+    if (li) pick(tracks[+li.dataset.i]);
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.search')) closeList(); });
+
+  function startManual() {
+    // Pre-fill the title with whatever they searched for.
+    if (q.value.trim() && !f.title.value) f.title.value = q.value.trim();
+    setMode('manual');
+    f.artist.focus();
+  }
+  $('manualBtn').addEventListener('click', startManual);
+  $('backBtn').addEventListener('click', () => { setMode('search'); q.focus(); });
+  $('changeBtn').addEventListener('click', () => { picked = null; setMode('search'); q.focus(); q.select(); if (q.value.trim().length >= 2) render(); });
+
   f.addEventListener('submit', async (e) => {
     e.preventDefault();
-    btn.disabled = true;
+    msg.className = 'err';
+    let song;
+    if (mode === 'picked') song = { trackId: picked.id, artist: picked.artist, title: picked.title };
+    else if (mode === 'manual') {
+      song = { artist: f.artist.value.trim(), title: f.title.value.trim() };
+      if (!song.artist || !song.title) return (msg.textContent = 'Please fill in both artist and song title.');
+    } else return (msg.textContent = 'Search for a song and tap it to pick it.');
+
+    const data = { ...song, name: f.name.value, note: f.note.value, website: f.website.value };
+    $('btn').disabled = true;
     msg.className = ''; msg.textContent = '';
-    const data = Object.fromEntries(new FormData(f));
     try {
       const res = await fetch('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Something went wrong.');
       try { localStorage.setItem('guestName', data.name || ''); } catch {}
       msg.className = 'ok';
-      msg.textContent = `✅ "${data.title}" added! Got another one?`;
+      msg.textContent = `✅ "${song.title}" added! Got another one?`;
       sent++;
-      countEl.textContent = `You've requested ${sent} song${sent === 1 ? '' : 's'} so far.`;
-      f.artist.value = ''; f.title.value = ''; f.note.value = '';
-      f.artist.focus();
+      $('count').textContent = `You've requested ${sent} song${sent === 1 ? '' : 's'} so far.`;
+      picked = null; q.value = ''; f.artist.value = ''; f.title.value = ''; f.note.value = '';
+      setMode('search');
     } catch (err) {
       msg.className = 'err';
       msg.textContent = err.message;
     } finally {
-      btn.disabled = false;
+      $('btn').disabled = false;
     }
   });
 </script>

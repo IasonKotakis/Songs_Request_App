@@ -3,14 +3,18 @@
 A tiny app that lets guests scan a QR code and drop in song requests before (and during) the party.
 The DJ gets a dashboard where they can see every request and export the list to build a playlist.
 
-- **Guest page** (`/`): a mobile-friendly form with artist, title, optional name and note. Guests can send as many songs as they like.
+- **Guest page** (`/`): a mobile-friendly form. Guests type a song or artist and pick it from a dropdown with album art, similar to Spotify's search. If a song isn't in the catalog, they can type the artist and title in by hand. Name and a note for the DJ are optional. Guests can send as many songs as they like.
 - **DJ dashboard** (`/admin`, protected by a key):
   - the QR code for the guest page, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first
+  - album art and album name for each song, plus a direct **Apple Music** link for songs picked from search
+  - songs that were typed in by hand are marked **typed**, so you know to double-check them
   - one-click Spotify / YouTube / Beatport search links for each song
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
   - **Export .csv**: a spreadsheet with votes, who asked, notes and search links, for sourcing tracks (for example, buying them on Beatport).
   - delete spam or joke requests
+
+Song search uses Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api), which needs no account or API key. When a guest picks a song, the server looks it up in the catalog again, so the stored artist, title and album are the real catalog names. That also makes the `.txt` export match much better when you import it into Spotify. If the search service is ever down, guests can still type songs in by hand.
 
 No database and no npm dependencies. Requests are saved to `data/requests.json`.
 
@@ -46,6 +50,7 @@ Guests will use it in the days before the party, so it needs to run on a public 
 | `EVENT_NAME` | `The Party` | Shown on the pages |
 | `PORT` | `3000` | HTTP port |
 | `DATA_DIR` | `./data` | Folder where `requests.json` is stored |
+| `MUSIC_COUNTRY` | `US` | Which country's music catalog to search (two-letter code, e.g. `GR`, `GB`) |
 | `MAX_PER_GUEST_PER_HOUR` | `20` | Basic spam limit, counted per IP address |
 
 ## Credits

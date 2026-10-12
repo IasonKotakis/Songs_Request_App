@@ -31,6 +31,9 @@
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
     th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
     td.links a { margin-right: 8px; color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+    .song { display: flex; gap: 10px; align-items: center; }
+    .art { width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--line); object-fit: cover; }
+    .manual { font-size: .75rem; color: #a3660b; background: #fff4e0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
     .badge { background: #efeaff; color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
     #login[hidden], #app[hidden] { display: none; }
@@ -163,11 +166,16 @@
     $('table').hidden = all.length === 0;
 
     if (view === 'songs') {
-      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Title</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
+      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
         songs.map((s, i) => `<tr>
-          <td>${i + 1}</td><td>${esc(s.artist)}</td><td>${esc(s.title)}${s.notes.length ? `<div class="muted small">${s.notes.map(esc).join('<br>')}</div>` : ''}</td>
+          <td>${i + 1}</td><td>${esc(s.artist)}</td>
+          <td><div class="song">${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
+            ${esc(s.title)} ${s.track ? '' : '<span class="manual" title="Typed in by hand, not picked from search: double-check it">typed</span>'}
+            ${s.track?.album ? `<div class="muted small">${esc(s.track.album)}</div>` : ''}
+            ${s.notes.length ? `<div class="muted small">💬 ${s.notes.map(esc).join('<br>💬 ')}</div>` : ''}
+          </div></div></td>
           <td><span class="badge">${s.count}</span></td><td class="small">${esc(s.requestedBy.join(', '))}</td>
-          <td class="links"><a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
+          <td class="links">${s.links.appleMusic ? `<a href="${esc(s.links.appleMusic)}" target="_blank" rel="noopener">Apple Music</a>` : ''}<a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
         </tr>`).join('');
     } else {
       $('table').innerHTML = '<tr><th>When</th><th>Artist</th><th>Title</th><th>Name</th><th>Note</th><th></th></tr>' +
