@@ -18,16 +18,17 @@ Song search uses Apple's free [iTunes Search API](https://performance-partners.a
 
 ## Try it on your computer first
 
-You need [Node.js](https://nodejs.org) 22 or newer (the "LTS" download). There's nothing else to install.
+1. Install [Node.js](https://nodejs.org): pick the **LTS** download. Restart your computer afterwards.
+2. Download the app: on GitHub click **Code → Download ZIP**, then unzip it.
+3. **Windows:** open the unzipped folder and double-click **`start-windows.bat`**.
+   Windows may warn about an unknown file; click **More info → Run anyway**.
+   **Mac / Linux:** open a terminal in the folder and run `npm start`.
 
-```bash
-npm start
-```
+A window opens showing the app's addresses, and your browser opens the DJ dashboard (password `changeme`). Keep that window open while testing; closing it stops the app.
 
-- Guest page: http://localhost:3000
-- DJ dashboard: http://localhost:3000/admin (password `changeme`)
+**To test the QR code with your phone:** put the phone on the same Wi-Fi. The window prints a line like `http://192.168.1.23:3000/admin`. Open *that* address on your computer (not `localhost`), and scan the QR code shown there. If the phone can't load the page, allow Node.js through the Windows firewall when it asks.
 
-**To test the QR code with your phone:** put the phone on the same Wi-Fi, find your computer's local IP (Mac: `ipconfig getifaddr en0`, Windows: `ipconfig`, look for "IPv4 Address"), and open the dashboard at `http://<that-ip>:3000/admin`. The QR code points to whatever address you opened the dashboard with, so it won't work if you open it via `localhost`.
+**Getting `ENOENT` / error `-4058` from npm?** The terminal isn't in the app's folder. Unzipping on Windows often creates a folder inside a folder with the same name; go into the inner one, where `package.json` is. Or just use `start-windows.bat`.
 
 ## Put it online for free with Cloudflare
 
@@ -67,7 +68,8 @@ On Cloudflare, `ADMIN_KEY` is a secret (`npm run cf:password`) and the rest go u
 
 - `src/app.js`: all the app logic, shared by both versions
 - `worker.js`: Cloudflare version (stores requests in D1, schema in `migrations/`)
-- `server.js`: Node version for local testing or any Docker host (stores requests in `data/requests.json`)
+- `server.js` + `src/node-server.js`: Node version for local testing or any Docker host (stores requests in `data/requests.json`)
+- `start-windows.bat`: double-click starter for Windows
 - `public/`: the guest page and the dashboard
 - `npm test` runs the tests for both versions
 

@@ -10,7 +10,7 @@ process.env.EVENT_NAME = 'Test Party';
 let server, base;
 
 before(async () => {
-  ({ server } = await import('../server.js'));
+  ({ server } = await import('../src/node-server.js'));
   await new Promise((r) => server.listen(0, r));
   base = `http://localhost:${server.address().port}`;
 });

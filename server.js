@@ -1,109 +1,33 @@
-// Runs the app on Node: for testing on your own computer (`npm start`) or any Docker host.
+// Starts the app on your computer: `npm start`, `node server.js`, or double-click start-windows.bat.
 // For Cloudflare, see worker.js.
 
-import http from 'node:http';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createApp } from './src/app.js';
+import os from 'node:os';
+import { server } from './src/node-server.js';
 
-const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT) || 3000;
-const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'requests.json');
 
-if (!process.env.ADMIN_KEY) {
-  console.warn('WARNING: ADMIN_KEY is not set. Using "changeme" — set ADMIN_KEY before sharing the link!');
-}
+// Addresses other devices on the same Wi-Fi can use (e.g. 192.168.1.23).
+const lanAddresses = Object.values(os.networkInterfaces())
+  .flat()
+  .filter((a) => a && a.family === 'IPv4' && !a.internal)
+  .map((a) => a.address);
 
-// Requests are kept in memory and saved to a JSON file.
-function fileStore() {
-  let requests = [];
-  try {
-    requests = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  } catch (err) {
-    if (err.code !== 'ENOENT') throw err;
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\nPort ${PORT} is already in use. Is the app already running in another window?`);
+  } else {
+    console.error(err);
   }
-  const save = () => {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    fs.writeFileSync(DATA_FILE + '.tmp', JSON.stringify(requests, null, 2));
-    fs.renameSync(DATA_FILE + '.tmp', DATA_FILE);
-  };
-  return {
-    list: async () => requests.map((r) => ({ ...r, track: r.track || null })),
-    add: async (entry) => {
-      requests.push(entry);
-      save();
-    },
-    remove: async (id) => {
-      const before = requests.length;
-      requests = requests.filter((r) => r.id !== id);
-      if (requests.length === before) return false;
-      save();
-      return true;
-    },
-  };
-}
-
-const app = createApp({
-  store: fileStore(),
-  adminKey: process.env.ADMIN_KEY || 'changeme',
-  eventName: process.env.EVENT_NAME,
-  musicCountry: process.env.MUSIC_COUNTRY,
-  musicApi: process.env.MUSIC_API,
-  maxPerGuestPerHour: Number(process.env.MAX_PER_GUEST_PER_HOUR) || undefined,
+  process.exit(1);
 });
 
-// The pages in public/ (on Cloudflare these are served as static assets).
-const STATIC = {
-  '/': ['index.html', 'text/html; charset=utf-8'],
-  '/index.html': ['index.html', 'text/html; charset=utf-8'],
-  '/admin': ['admin.html', 'text/html; charset=utf-8'],
-  '/admin.html': ['admin.html', 'text/html; charset=utf-8'],
-  '/vendor/qrcode.js': ['vendor/qrcode.js', 'text/javascript; charset=utf-8'],
-};
-
-function readBody(req, limit = 10_000) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    let size = 0;
-    req.on('data', (c) => {
-      size += c.length;
-      if (size > limit) {
-        reject(Object.assign(new Error('Request too large.'), { status: 413 }));
-        req.destroy();
-      } else chunks.push(c);
-    });
-    req.on('end', () => resolve(Buffer.concat(chunks)));
-    req.on('error', reject);
-  });
-}
-
-export const server = http.createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-    const file = STATIC[url.pathname];
-    if (req.method === 'GET' && file) {
-      res.writeHead(200, { 'Content-Type': file[1], 'Cache-Control': 'no-store' });
-      return res.end(fs.readFileSync(path.join(ROOT, 'public', file[0])));
-    }
-    const hasBody = !['GET', 'HEAD'].includes(req.method);
-    const request = new Request(url, { method: req.method, headers: req.headers, body: hasBody ? await readBody(req) : undefined });
-    const fwd = req.headers['x-forwarded-for'];
-    const ip = (fwd ? fwd.split(',')[0] : req.socket.remoteAddress || '').trim();
-    const response = await app(request, ip);
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(Buffer.from(await response.arrayBuffer()));
-  } catch (err) {
-    if (!err.status) console.error(err);
-    if (!res.headersSent) res.writeHead(err.status || 500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: err.status ? err.message : 'Server error' }));
+server.listen(PORT, () => {
+  console.log('\n  Song requests app is running!\n');
+  console.log(`  Guest page on this computer:    http://localhost:${PORT}`);
+  console.log(`  DJ dashboard on this computer:  http://localhost:${PORT}/admin`);
+  for (const ip of lanAddresses) {
+    console.log(`  To test the QR code with a phone on the same Wi-Fi, open:  http://${ip}:${PORT}/admin`);
   }
+  if (!process.env.ADMIN_KEY) console.log('\n  Dashboard password: changeme');
+  console.log('\n  Keep this window open. Close it (or press Ctrl+C) to stop the app.\n');
 });
-
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  server.listen(PORT, () => {
-    console.log(`Song requests running on http://localhost:${PORT}`);
-    console.log(`DJ dashboard: http://localhost:${PORT}/admin`);
-  });
-}
