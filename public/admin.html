@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DJ Dashboard · {{EVENT_NAME}}</title>
+  <title>DJ Dashboard</title>
   <script src="/vendor/qrcode.js"></script>
   <style>
     :root { --bg: #f6f5fb; --card: #fff; --text: #1d1933; --muted: #6b6588; --line: #e6e3f2; --accent: #7c5cff; --danger: #d64545; }
@@ -45,7 +45,7 @@
 <body>
 <main>
   <h1>🎧 DJ Dashboard</h1>
-  <p class="muted">{{EVENT_NAME}}</p>
+  <p class="muted event-name"></p>
 
   <section id="login" class="card">
     <form id="loginForm" class="row">
@@ -104,7 +104,7 @@
 <div id="printable">
   <div>
     <h2>🎶 Request a song!</h2>
-    <p style="font-size:1.4rem">{{EVENT_NAME}}</p>
+    <p style="font-size:1.4rem" class="event-name"></p>
     <img id="printQr" alt="QR code">
     <p id="printUrl" style="font-size:1.1rem"></p>
   </div>
@@ -113,6 +113,10 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  fetch('/api/config').then((r) => r.json()).then((c) => {
+    document.querySelectorAll('.event-name').forEach((el) => (el.textContent = c.eventName));
+    document.title = 'DJ Dashboard · ' + c.eventName;
+  }).catch(() => {});
   let key = '';
   let view = 'songs';
   try { key = sessionStorage.getItem('adminKey') || ''; } catch {}

@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "song-requests",
+  "main": "worker.js",
+  "compatibility_date": "2026-09-01",
+  "assets": { "directory": "./public" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "song-requests",
+      // Paste the id printed by `npm run cf:create-db` here.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "EVENT_NAME": "The Party",
+    "MUSIC_COUNTRY": "US"
+  }
+}

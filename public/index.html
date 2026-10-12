@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Song Requests · {{EVENT_NAME}}</title>
+  <title>Song Requests</title>
   <style>
     :root { --bg: #0f0b1e; --card: #1b1533; --field: #120e24; --line: #3a3160; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
     * { box-sizing: border-box; }
@@ -51,7 +51,7 @@
 </head>
 <body>
 <main>
-  <h1>🎶 Request a song for <span>{{EVENT_NAME}}</span></h1>
+  <h1>🎶 Request a song for <span class="event-name">the party</span></h1>
   <p class="sub">Drop the tracks you want to hear. Add as many as you like!</p>
 
   <form id="f" autocomplete="off" novalidate>
@@ -137,14 +137,44 @@
     q.setAttribute('aria-expanded', 'true');
   }
 
+  // Settings from the server: party name and which country's catalog to search.
+  const config = fetch('/api/config').then((r) => r.json()).catch(() => ({}));
+  config.then((c) => {
+    if (!c.eventName) return;
+    document.querySelector('.event-name').textContent = c.eventName;
+    document.title = 'Song Requests · ' + c.eventName;
+  });
+
+  // Apple's iTunes Search API is queried straight from the guest's phone (free, no key).
+  // It is loaded via JSONP, the method Apple documents for use from web pages.
+  let jsonpSeq = 0;
+  function jsonp(src) {
+    return new Promise((resolve, reject) => {
+      const cb = '__itunes' + ++jsonpSeq;
+      const script = document.createElement('script');
+      const done = () => { window[cb] = () => {}; script.remove(); clearTimeout(timeout); };
+      const timeout = setTimeout(() => { done(); reject(new Error('timeout')); }, 8000);
+      window[cb] = (data) => { done(); resolve(data); };
+      script.onerror = () => { done(); reject(new Error('network')); };
+      script.src = src + '&callback=' + cb;
+      document.head.appendChild(script);
+    });
+  }
+
+  const toTrack = (r) => ({
+    id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
+    artwork: (r.artworkUrl100 || '').replace('100x100bb', '120x120bb'), durationMs: r.trackTimeMillis || 0,
+    explicit: r.trackExplicitness === 'explicit', url: r.trackViewUrl || '',
+  });
+
   async function search(term) {
     const seq = ++searchSeq;
     try {
-      const res = await fetch('/api/search?q=' + encodeURIComponent(term));
-      const body = await res.json();
+      const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
+      const data = await jsonp(`${musicApi}/search?media=music&entity=song&limit=8&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
       if (seq !== searchSeq || mode !== 'search') return; // a newer search is on its way
-      if (!res.ok) throw new Error(body.error);
-      tracks = body; active = -1; render();
+      tracks = (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
+      active = -1; render();
     } catch {
       if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
     }
@@ -194,7 +224,7 @@
     e.preventDefault();
     msg.className = 'err';
     let song;
-    if (mode === 'picked') song = { trackId: picked.id, artist: picked.artist, title: picked.title };
+    if (mode === 'picked') song = { track: picked, artist: picked.artist, title: picked.title };
     else if (mode === 'manual') {
       song = { artist: f.artist.value.trim(), title: f.title.value.trim() };
       if (!song.artist || !song.title) return (msg.textContent = 'Please fill in both artist and song title.');

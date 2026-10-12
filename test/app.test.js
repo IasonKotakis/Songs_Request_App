@@ -1,48 +1,38 @@
-const { test, before, after } = require('node:test');
-const assert = require('node:assert');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
-const http = require('node:http');
-
-// Fake of Apple's iTunes Search API, answering in its real response format.
-const catalog = [
-  { kind: 'song', trackId: 697195787, artistName: 'Daft Punk', trackName: 'One More Time', collectionName: 'Discovery',
-    artworkUrl100: 'https://example.com/a/100x100bb.jpg', trackTimeMillis: 320357, trackExplicitness: 'notExplicit',
-    trackViewUrl: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787' },
-  { kind: 'music-video', trackId: 5, artistName: 'Daft Punk', trackName: 'One More Time (Video)' },
-];
-let musicApiUp = true;
-const fakeMusicApi = http.createServer((req, res) => {
-  const u = new URL(req.url, 'http://x');
-  if (!musicApiUp) { res.writeHead(503); return res.end(); }
-  let results = [];
-  if (u.pathname === '/search') results = catalog.filter((t) => `${t.artistName} ${t.trackName}`.toLowerCase().includes(u.searchParams.get('term').toLowerCase()));
-  if (u.pathname === '/lookup') results = catalog.filter((t) => String(t.trackId) === u.searchParams.get('id'));
-  res.writeHead(200, { 'Content-Type': 'text/javascript' });
-  res.end(JSON.stringify({ resultCount: results.length, results }));
-});
+import { test, before, after } from 'node:test';
+import assert from 'node:assert';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'songs-'));
 process.env.ADMIN_KEY = 'secret';
-let server;
+process.env.EVENT_NAME = 'Test Party';
+let server, base;
 
-let base;
 before(async () => {
-  await new Promise((r) => fakeMusicApi.listen(0, r));
-  process.env.MUSIC_API = `http://localhost:${fakeMusicApi.address().port}`;
-  ({ server } = require('../server'));
-  await new Promise((r) => server.listen(0, () => { base = `http://localhost:${server.address().port}`; r(); }));
+  ({ server } = await import('../server.js'));
+  await new Promise((r) => server.listen(0, r));
+  base = `http://localhost:${server.address().port}`;
 });
-after(() => { server.close(); fakeMusicApi.close(); });
+after(() => server.close());
 
 const post = (body) => fetch(base + '/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 const admin = (p, opts = {}) => fetch(base + p, { ...opts, headers: { Authorization: 'Bearer secret' } });
 
-test('guest page loads', async () => {
-  const res = await fetch(base + '/');
-  assert.strictEqual(res.status, 200);
-  assert.match(await res.text(), /Request a song/);
+// What the guest page sends after picking a song from Apple's search.
+const pickedTrack = {
+  id: '697195787', artist: 'Daft Punk', title: 'One More Time', album: 'Discovery',
+  artwork: 'https://is1-ssl.mzstatic.com/image/thumb/a/120x120bb.jpg', durationMs: 320357, explicit: false,
+  url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
+};
+
+test('guest and admin pages load, config gives the party name', async () => {
+  assert.match(await (await fetch(base + '/')).text(), /Request a song/);
+  assert.match(await (await fetch(base + '/admin')).text(), /DJ Dashboard/);
+  assert.strictEqual((await fetch(base + '/vendor/qrcode.js')).status, 200);
+  const config = await (await fetch(base + '/api/config')).json();
+  assert.strictEqual(config.eventName, 'Test Party');
+  assert.strictEqual(config.musicCountry, 'US');
 });
 
 test('rejects incomplete requests', async () => {
@@ -61,9 +51,7 @@ test('stores, groups duplicates and exports', async () => {
 
   const txt = await (await admin('/export.txt')).text();
   assert.strictEqual(txt, 'Daft Punk - One More Time\nRobyn - Dancing On My Own\n');
-
-  const csv = await (await admin('/export.csv')).text();
-  assert.match(csv, /"Daft Punk","One More Time","","","2","Ana; Bo"/);
+  assert.match(await (await admin('/export.csv')).text(), /"Daft Punk","One More Time","","","2","Ana; Bo"/);
 
   const saved = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, 'requests.json'), 'utf8'));
   assert.strictEqual(saved.length, 3);
@@ -79,45 +67,31 @@ test('admin can delete a request', async () => {
   const all = await (await admin('/api/requests')).json();
   assert.strictEqual((await admin('/api/requests/' + all[2].id, { method: 'DELETE' })).status, 200);
   assert.strictEqual((await (await admin('/api/requests')).json()).length, all.length - 1);
+  assert.strictEqual((await admin('/api/requests/nope', { method: 'DELETE' })).status, 404);
 });
 
-test('search returns songs only, in a simple shape', async () => {
-  const tracks = await (await fetch(base + '/api/search?q=one%20more')).json();
-  assert.strictEqual(tracks.length, 1);
-  assert.deepStrictEqual(tracks[0], {
-    id: '697195787', artist: 'Daft Punk', title: 'One More Time', album: 'Discovery',
-    artwork: 'https://example.com/a/120x120bb.jpg', durationMs: 320357, explicit: false,
-    url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
-  });
-  assert.deepStrictEqual(await (await fetch(base + '/api/search?q=o')).json(), []);
-});
-
-test('a picked song is verified against the catalog, not trusted from the browser', async () => {
-  const res = await post({ trackId: '697195787', artist: 'Fake', title: 'Spoofed', name: 'Cy' });
-  assert.strictEqual(res.status, 201);
-  const all = await (await admin('/api/requests')).json();
-  const last = all.at(-1);
-  assert.strictEqual(last.artist, 'Daft Punk');
+test('a picked song keeps its catalog details and merges with typed-in requests', async () => {
+  assert.strictEqual((await post({ track: pickedTrack, artist: 'ignored', title: 'ignored', name: 'Cy' })).status, 201);
+  const last = (await (await admin('/api/requests')).json()).at(-1);
   assert.strictEqual(last.title, 'One More Time');
-  assert.strictEqual(last.track.album, 'Discovery');
+  assert.deepStrictEqual(last.track, pickedTrack);
 
-  // It merges with the typed-in request for the same song and lends it the catalog details.
-  const songs = await (await admin('/api/songs')).json();
-  const daft = songs.find((s) => s.artist === 'Daft Punk');
+  const daft = (await (await admin('/api/songs')).json()).find((s) => s.artist === 'Daft Punk');
   assert.strictEqual(daft.count, 3);
-  assert.match(daft.links.appleMusic, /music\.apple\.com/);
+  assert.strictEqual(daft.links.appleMusic, pickedTrack.url);
   assert.match(await (await admin('/export.csv')).text(), /"Discovery","5:20"/);
 });
 
-test('search outage: search reports it, and requests fall back to the typed text', async () => {
-  musicApiUp = false;
-  try {
-    assert.strictEqual((await fetch(base + '/api/search?q=something%20new')).status, 502);
-    assert.strictEqual((await post({ trackId: '123', artist: 'Robyn', title: 'Hang With Me' })).status, 201);
-    const last = (await (await admin('/api/requests')).json()).at(-1);
-    assert.strictEqual(last.title, 'Hang With Me');
-    assert.strictEqual(last.track, null);
-  } finally {
-    musicApiUp = true;
-  }
+test('picked-song details are sanitised: only Apple links, bad tracks fall back to typed text', async () => {
+  const evil = { ...pickedTrack, id: '1', artwork: 'https://evil.example/x.jpg', url: 'javascript:alert(1)', durationMs: 'lots' };
+  await post({ track: evil });
+  const t = (await (await admin('/api/requests')).json()).at(-1).track;
+  assert.strictEqual(t.artwork, '');
+  assert.strictEqual(t.url, '');
+  assert.strictEqual(t.durationMs, 0);
+
+  await post({ track: { id: 'not-a-number', artist: 'X', title: 'Y' }, artist: 'Robyn', title: 'Hang With Me' });
+  const last = (await (await admin('/api/requests')).json()).at(-1);
+  assert.strictEqual(last.title, 'Hang With Me');
+  assert.strictEqual(last.track, null);
 });

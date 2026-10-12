@@ -4,55 +4,71 @@ A tiny app that lets guests scan a QR code and drop in song requests before (and
 The DJ gets a dashboard where they can see every request and export the list to build a playlist.
 
 - **Guest page** (`/`): a mobile-friendly form. Guests type a song or artist and pick it from a dropdown with album art, similar to Spotify's search. If a song isn't in the catalog, they can type the artist and title in by hand. Name and a note for the DJ are optional. Guests can send as many songs as they like.
-- **DJ dashboard** (`/admin`, protected by a key):
-  - the QR code for the guest page, ready to download or print as a poster
+- **DJ dashboard** (`/admin`, protected by a password):
+  - the QR code for the guest page, plus the plain link, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first
   - album art and album name for each song, plus a direct **Apple Music** link for songs picked from search
   - songs that were typed in by hand are marked **typed**, so you know to double-check them
   - one-click Spotify / YouTube / Beatport search links for each song
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
-  - **Export .csv**: a spreadsheet with votes, who asked, notes and search links, for sourcing tracks (for example, buying them on Beatport).
+  - **Export .csv**: a spreadsheet with votes, who asked, album, length, notes and links.
   - delete spam or joke requests
 
-Song search uses Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api), which needs no account or API key. When a guest picks a song, the server looks it up in the catalog again, so the stored artist, title and album are the real catalog names. That also makes the `.txt` export match much better when you import it into Spotify. If the search service is ever down, guests can still type songs in by hand.
+Song search uses Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api), which needs no account or key. Each guest's phone searches Apple directly, so a busy party never hits Apple's per-address limit. Picked songs are stored with their official catalog names, which makes the `.txt` export match much better when you import it into a playlist.
 
-No database and no npm dependencies. Requests are saved to `data/requests.json`.
+## Try it on your computer first
 
-## Run it locally
+You need [Node.js](https://nodejs.org) 22 or newer (the "LTS" download). There's nothing else to install.
 
 ```bash
-ADMIN_KEY=pick-a-secret EVENT_NAME="Iason's Birthday" npm start
-# guests:  http://localhost:3000/
-# you:     http://localhost:3000/admin
+npm start
 ```
 
-Requires Node 18 or newer. Run `npm test` for the tests.
+- Guest page: http://localhost:3000
+- DJ dashboard: http://localhost:3000/admin (password `changeme`)
 
-## Put it online so guests can scan the QR
+**To test the QR code with your phone:** put the phone on the same Wi-Fi, find your computer's local IP (Mac: `ipconfig getifaddr en0`, Windows: `ipconfig`, look for "IPv4 Address"), and open the dashboard at `http://<that-ip>:3000/admin`. The QR code points to whatever address you opened the dashboard with, so it won't work if you open it via `localhost`.
 
-Guests will use it in the days before the party, so it needs to run on a public host. The host also **needs persistent storage**, otherwise requests are lost on every restart or redeploy. Set `DATA_DIR` to the mounted volume's path.
+## Put it online for free with Cloudflare
 
-**Railway** (simple option):
-1. Create a new project from this GitHub repo.
-2. Add a **Volume** mounted at `/data`.
-3. Set the variables `ADMIN_KEY`, `EVENT_NAME` and `DATA_DIR=/data`.
-4. Generate a public domain, open `https://<your-domain>/admin`, and print the QR code.
+This runs on Cloudflare Workers with a D1 database. A party's worth of traffic stays well inside the free plan. You don't need a domain: Cloudflare gives you a free address like `https://song-requests.<your-name>.workers.dev`.
 
-**Fly.io / Render / any Docker host:** a `Dockerfile` is included. It stores data in `/data`, so mount a volume or disk there.
+One-time setup, in a terminal in this folder:
+
+1. `npm install`: installs Cloudflare's `wrangler` tool.
+2. `npm run cf:login`: opens your browser to log in to (or sign up for) a free Cloudflare account.
+3. `npm run cf:create-db`: creates the database and prints a `database_id`. Copy it into `wrangler.jsonc`, replacing the `00000000-…` placeholder.
+4. In `wrangler.jsonc`, set `EVENT_NAME` to your party's name. Optionally set `MUSIC_COUNTRY` (e.g. `GR`, `GB`) so the search shows your country's catalog.
+5. `npm run cf:migrate`: creates the table in the database.
+6. `npm run cf:deploy`: puts the app online and prints its address.
+7. `npm run cf:password`: sets your dashboard password (it asks you to type it). Until you do this the site shows an error, which is on purpose.
+
+Then open `https://<your-address>/admin`, log in, and print or share the QR code.
+
+To change something later (e.g. the party name), edit `wrangler.jsonc` and run `npm run cf:deploy` again. Requests are kept.
+
+**Try the Cloudflare version locally:** create a file called `.dev.vars` containing `ADMIN_KEY=changeme`, then run `npm run cf:dev` and open http://localhost:8787.
 
 > Tip: download **Export .json** (`/export.json?key=…`) now and then as a backup.
 
-## Configuration
+## Settings
 
-| Variable | Default | Purpose |
+| Setting | Default | Purpose |
 | --- | --- | --- |
-| `ADMIN_KEY` | `changeme` | Password for the DJ dashboard and exports. **Change this!** |
+| `ADMIN_KEY` | `changeme` locally; must be set on Cloudflare | Password for the DJ dashboard and exports |
 | `EVENT_NAME` | `The Party` | Shown on the pages |
-| `PORT` | `3000` | HTTP port |
-| `DATA_DIR` | `./data` | Folder where `requests.json` is stored |
-| `MUSIC_COUNTRY` | `US` | Which country's music catalog to search (two-letter code, e.g. `GR`, `GB`) |
+| `MUSIC_COUNTRY` | `US` | Which country's music catalog to search (two-letter code) |
 | `MAX_PER_GUEST_PER_HOUR` | `20` | Basic spam limit, counted per IP address |
+| `PORT`, `DATA_DIR` | `3000`, `./data` | Node version only: port, and where `requests.json` is saved |
 
-## Credits
+On Cloudflare, `ADMIN_KEY` is a secret (`npm run cf:password`) and the rest go under `vars` in `wrangler.jsonc`. Locally, they are environment variables, e.g. `ADMIN_KEY=secret EVENT_NAME="My Party" npm start`.
+
+## How it's built
+
+- `src/app.js`: all the app logic, shared by both versions
+- `worker.js`: Cloudflare version (stores requests in D1, schema in `migrations/`)
+- `server.js`: Node version for local testing or any Docker host (stores requests in `data/requests.json`)
+- `public/`: the guest page and the dashboard
+- `npm test` runs the tests for both versions
 
 The QR code is generated in the browser with [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT), bundled in `public/vendor/`.

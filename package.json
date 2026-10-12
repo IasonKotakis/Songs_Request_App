@@ -1,14 +1,24 @@
 {
   "name": "party-song-requests",
-  "version": "1.0.0",
+  "version": "2.0.0",
+  "private": true,
   "description": "Tiny QR-code song request app for a party. Guests submit songs; the DJ exports the list.",
-  "main": "server.js",
+  "type": "module",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "cf:dev": "wrangler d1 migrations apply song-requests --local && wrangler dev",
+    "cf:login": "wrangler login",
+    "cf:create-db": "wrangler d1 create song-requests",
+    "cf:migrate": "wrangler d1 migrations apply song-requests --remote",
+    "cf:password": "wrangler secret put ADMIN_KEY",
+    "cf:deploy": "wrangler deploy"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "wrangler": "4.136.3"
   },
   "license": "MIT"
 }
