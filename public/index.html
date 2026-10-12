@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Song Requests · {{EVENT_NAME}}</title>
+  <style>
+    :root { --bg: #0f0b1e; --card: #1b1533; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--text);
+      background: radial-gradient(circle at 20% 0%, #3a1d6e 0, transparent 50%), radial-gradient(circle at 100% 100%, #5a1240 0, transparent 45%), var(--bg); }
+    main { max-width: 440px; margin: 0 auto; padding: 32px 16px 48px; }
+    h1 { font-size: 1.9rem; margin: 0 0 4px; line-height: 1.15; }
+    h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    p.sub { color: var(--muted); margin: 0 0 24px; }
+    form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
+    label { display: block; font-size: .85rem; font-weight: 600; margin: 14px 0 6px; color: var(--muted); }
+    label:first-child { margin-top: 0; }
+    input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid #3a3160; background: #120e24; color: var(--text); font-size: 1rem; }
+    input:focus, textarea:focus { outline: 2px solid var(--accent2); border-color: transparent; }
+    textarea { resize: vertical; min-height: 60px; }
+    .opt { font-weight: 400; opacity: .7; }
+    .hp { position: absolute; left: -9999px; }
+    button { width: 100%; margin-top: 20px; padding: 14px; font-size: 1.05rem; font-weight: 700; color: #fff; border: 0; border-radius: 12px; cursor: pointer;
+      background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+    button:disabled { opacity: .6; cursor: wait; }
+    #msg { margin-top: 14px; min-height: 1.4em; text-align: center; font-weight: 600; }
+    #msg.ok { color: var(--ok); } #msg.err { color: var(--err); }
+    .count { text-align: center; color: var(--muted); font-size: .9rem; margin-top: 18px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🎶 Request a song for <span>{{EVENT_NAME}}</span></h1>
+  <p class="sub">Drop the tracks you want to hear. Add as many as you like!</p>
+
+  <form id="f" autocomplete="off">
+    <label for="artist">Artist</label>
+    <input id="artist" name="artist" maxlength="120" required placeholder="e.g. Daft Punk">
+
+    <label for="title">Song title</label>
+    <input id="title" name="title" maxlength="160" required placeholder="e.g. One More Time">
+
+    <label for="name">Your name <span class="opt">(optional)</span></label>
+    <input id="name" name="name" maxlength="60" placeholder="So the DJ can shout you out">
+
+    <label for="note">Note for the DJ <span class="opt">(optional)</span></label>
+    <textarea id="note" name="note" maxlength="200" placeholder="Remix, version, perfect moment to play it…"></textarea>
+
+    <input class="hp" name="website" tabindex="-1" aria-hidden="true">
+
+    <button id="btn" type="submit">Send request</button>
+    <div id="msg" role="status"></div>
+  </form>
+  <p class="count" id="count"></p>
+</main>
+<script>
+  const f = document.getElementById('f');
+  const msg = document.getElementById('msg');
+  const btn = document.getElementById('btn');
+  const countEl = document.getElementById('count');
+  let sent = 0;
+
+  try { f.name.value = localStorage.getItem('guestName') || ''; } catch {}
+
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    msg.className = ''; msg.textContent = '';
+    const data = Object.fromEntries(new FormData(f));
+    try {
+      const res = await fetch('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Something went wrong.');
+      try { localStorage.setItem('guestName', data.name || ''); } catch {}
+      msg.className = 'ok';
+      msg.textContent = `✅ "${data.title}" added! Got another one?`;
+      sent++;
+      countEl.textContent = `You've requested ${sent} song${sent === 1 ? '' : 's'} so far.`;
+      f.artist.value = ''; f.title.value = ''; f.note.value = '';
+      f.artist.focus();
+    } catch (err) {
+      msg.className = 'err';
+      msg.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

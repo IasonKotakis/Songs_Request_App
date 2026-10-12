@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DJ Dashboard · {{EVENT_NAME}}</title>
+  <script src="/vendor/qrcode.js"></script>
+  <style>
+    :root { --bg: #f6f5fb; --card: #fff; --text: #1d1933; --muted: #6b6588; --line: #e6e3f2; --accent: #7c5cff; --danger: #d64545; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
+    h1 { margin: 0 0 4px; font-size: 1.6rem; }
+    .muted { color: var(--muted); }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-top: 18px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 1rem; min-width: 0; flex: 1; }
+    button, a.btn { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 600; font-size: .95rem; cursor: pointer; text-decoration: none; display: inline-block; }
+    button.ghost, a.btn.ghost { background: transparent; color: var(--accent); }
+    button.del { background: transparent; border-color: transparent; color: var(--danger); padding: 4px 8px; }
+    .qr-wrap { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; }
+    #qr img { display: block; width: 180px; height: 180px; image-rendering: pixelated; }
+    @media (max-width: 600px) { .qr-wrap { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
+    .stats { display: flex; gap: 24px; flex-wrap: wrap; }
+    .stat b { display: block; font-size: 1.6rem; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+    .tabs button { background: transparent; color: var(--muted); border-color: var(--line); }
+    .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+    td.links a { margin-right: 8px; color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
+    .badge { background: #efeaff; color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
+    .small { font-size: .85rem; }
+    #login[hidden], #app[hidden] { display: none; }
+    @media print { body * { visibility: hidden; } #printable, #printable * { visibility: visible; } #printable { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; } }
+    #printable { display: none; }
+    @media print { #printable { display: grid; } #printable img { width: 70vmin; height: 70vmin; } #printable h2 { font-size: 2.4rem; } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🎧 DJ Dashboard</h1>
+  <p class="muted">{{EVENT_NAME}}</p>
+
+  <section id="login" class="card">
+    <form id="loginForm" class="row">
+      <input id="key" type="password" placeholder="Admin key" autocomplete="current-password" required>
+      <button>Unlock</button>
+    </form>
+    <p id="loginErr" class="small" style="color: var(--danger)"></p>
+  </section>
+
+  <div id="app" hidden>
+    <section class="card qr-wrap">
+      <div id="qr"></div>
+      <div>
+        <h3 style="margin-top:0">Share this with your guests</h3>
+        <p class="row"><input id="guestUrl" readonly><button class="ghost" id="copyBtn" type="button">Copy</button></p>
+        <p class="row">
+          <a class="btn ghost" id="dlQr" download="song-requests-qr.png">Download QR</a>
+          <button class="ghost" type="button" onclick="window.print()">Print poster</button>
+        </p>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="row" style="justify-content: space-between">
+        <div class="stats">
+          <div class="stat"><b id="sTotal">0</b><span class="muted small">requests</span></div>
+          <div class="stat"><b id="sUnique">0</b><span class="muted small">unique songs</span></div>
+          <div class="stat"><b id="sGuests">0</b><span class="muted small">named guests</span></div>
+        </div>
+        <div class="row">
+          <a class="btn" id="exTxt">Export .txt</a>
+          <a class="btn ghost" id="exCsv">Export .csv</a>
+          <button class="ghost" id="copyTxt" type="button">Copy list</button>
+          <button class="ghost" id="refresh" type="button">Refresh</button>
+        </div>
+      </div>
+      <p class="muted small">
+        Tip: the <b>.txt</b> export is one “Artist - Title” per line. Paste it into
+        <a href="https://www.tunemymusic.com/" target="_blank" rel="noopener">TuneMyMusic</a> or
+        <a href="https://soundiiz.com/" target="_blank" rel="noopener">Soundiiz</a> to build a Spotify / Apple Music / Tidal playlist in one go.
+        The <b>.csv</b> has search links for each track.
+      </p>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button id="tabSongs" class="on" type="button">Songs (grouped)</button>
+        <button id="tabAll" type="button">All requests</button>
+      </div>
+      <div class="table-scroll"><table id="table"></table></div>
+      <p id="empty" class="muted" hidden>No requests yet. Share the QR code!</p>
+    </section>
+  </div>
+</main>
+
+<div id="printable">
+  <div>
+    <h2>🎶 Request a song!</h2>
+    <p style="font-size:1.4rem">{{EVENT_NAME}}</p>
+    <img id="printQr" alt="QR code">
+    <p id="printUrl" style="font-size:1.1rem"></p>
+  </div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let key = '';
+  let view = 'songs';
+  try { key = sessionStorage.getItem('adminKey') || ''; } catch {}
+
+  const api = async (path, opts = {}) => {
+    const res = await fetch(path, { ...opts, headers: { Authorization: 'Bearer ' + key, ...(opts.headers || {}) } });
+    if (res.status === 401) throw new Error('unauthorized');
+    if (!res.ok) throw new Error('Request failed');
+    return res;
+  };
+
+  async function unlock(k) {
+    key = k;
+    try {
+      await api('/api/requests');
+      try { sessionStorage.setItem('adminKey', key); } catch {}
+      $('login').hidden = true; $('app').hidden = false;
+      setup();
+      load();
+    } catch (e) {
+      $('loginErr').textContent = e.message === 'unauthorized' ? 'Wrong admin key.' : e.message;
+    }
+  }
+
+  function setup() {
+    const guestUrl = location.origin + '/';
+    $('guestUrl').value = guestUrl;
+    $('printUrl').textContent = guestUrl;
+    if (window.qrcode) {
+      const qr = qrcode(0, 'M');
+      qr.addData(guestUrl);
+      qr.make();
+      const src = qr.createDataURL(10, 4);
+      $('qr').innerHTML = `<img alt="QR code" src="${src}">`;
+      $('printQr').src = src;
+      $('dlQr').href = src;
+    } else {
+      $('qr').textContent = 'QR library failed to load';
+    }
+    const k = encodeURIComponent(key);
+    $('exTxt').href = '/export.txt?key=' + k;
+    $('exCsv').href = '/export.csv?key=' + k;
+  }
+
+  async function load() {
+    const [all, songs] = await Promise.all([api('/api/requests').then((r) => r.json()), api('/api/songs').then((r) => r.json())]);
+    $('sTotal').textContent = all.length;
+    $('sUnique').textContent = songs.length;
+    $('sGuests').textContent = new Set(all.map((r) => r.name.toLowerCase()).filter(Boolean)).size;
+    $('empty').hidden = all.length > 0;
+    $('table').hidden = all.length === 0;
+
+    if (view === 'songs') {
+      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Title</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
+        songs.map((s, i) => `<tr>
+          <td>${i + 1}</td><td>${esc(s.artist)}</td><td>${esc(s.title)}${s.notes.length ? `<div class="muted small">${s.notes.map(esc).join('<br>')}</div>` : ''}</td>
+          <td><span class="badge">${s.count}</span></td><td class="small">${esc(s.requestedBy.join(', '))}</td>
+          <td class="links"><a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
+        </tr>`).join('');
+    } else {
+      $('table').innerHTML = '<tr><th>When</th><th>Artist</th><th>Title</th><th>Name</th><th>Note</th><th></th></tr>' +
+        all.slice().reverse().map((r) => `<tr>
+          <td class="small muted">${new Date(r.createdAt).toLocaleString()}</td><td>${esc(r.artist)}</td><td>${esc(r.title)}</td>
+          <td>${esc(r.name)}</td><td class="small">${esc(r.note)}</td>
+          <td><button class="del" data-id="${esc(r.id)}" title="Delete">✕</button></td>
+        </tr>`).join('');
+    }
+  }
+
+  $('loginForm').addEventListener('submit', (e) => { e.preventDefault(); unlock($('key').value); });
+  $('refresh').addEventListener('click', load);
+  $('copyBtn').addEventListener('click', () => navigator.clipboard.writeText($('guestUrl').value));
+  $('copyTxt').addEventListener('click', async (e) => {
+    const text = await api('/export.txt').then((r) => r.text());
+    await navigator.clipboard.writeText(text);
+    e.target.textContent = 'Copied!';
+    setTimeout(() => (e.target.textContent = 'Copy list'), 1500);
+  });
+  $('tabSongs').addEventListener('click', () => { view = 'songs'; $('tabSongs').classList.add('on'); $('tabAll').classList.remove('on'); load(); });
+  $('tabAll').addEventListener('click', () => { view = 'all'; $('tabAll').classList.add('on'); $('tabSongs').classList.remove('on'); load(); });
+  $('table').addEventListener('click', async (e) => {
+    const id = e.target.dataset?.id;
+    if (!id || !confirm('Delete this request?')) return;
+    await api('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' });
+    load();
+  });
+
+  if (key) unlock(key);
+</script>
+</body>
+</html>
