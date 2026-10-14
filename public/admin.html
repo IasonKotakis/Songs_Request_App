@@ -6,18 +6,20 @@
   <title>DJ Dashboard</title>
   <script src="/vendor/qrcode.js"></script>
   <style>
-    :root { --bg: #f6f5fb; --card: #fff; --text: #1d1933; --muted: #6b6588; --line: #e6e3f2; --accent: #7c5cff; --danger: #d64545; }
+    :root { color-scheme: dark; --bg: #0f0c1a; --card: #1a1629; --field: #120f1f; --text: #f1eefb; --muted: #9d96b8; --line: #2e2845; --accent: #9b82ff; --danger: #ff6b6b; --badge: #2c2452; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--bg); color: var(--text); }
     main { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
     h1 { margin: 0 0 4px; font-size: 1.6rem; }
     .muted { color: var(--muted); }
+    a { color: var(--accent); }
     .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-top: 18px; }
     .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
-    input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 1rem; min-width: 0; flex: 1; }
+    input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 1rem; min-width: 0; flex: 1; background: var(--field); color: var(--text); }
     button, a.btn { padding: 10px 14px; border-radius: 10px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 600; font-size: .95rem; cursor: pointer; text-decoration: none; display: inline-block; }
     button.ghost, a.btn.ghost { background: transparent; color: var(--accent); }
-    button.del { background: transparent; border-color: transparent; color: var(--danger); padding: 4px 8px; }
+    button.del { background: transparent; border: 1px solid var(--line); color: var(--danger); width: 32px; height: 32px; padding: 0; border-radius: 50%; font-size: .9rem; }
+    button.del:hover { border-color: var(--danger); background: rgba(255, 107, 107, .12); }
     .qr-wrap { display: grid; grid-template-columns: auto 1fr; gap: 20px; align-items: center; }
     #qr img { display: block; width: 180px; height: 180px; image-rendering: pixelated; }
     @media (max-width: 600px) { .qr-wrap { grid-template-columns: 1fr; justify-items: center; text-align: center; } }
@@ -33,15 +35,16 @@
     td.links a { margin-right: 8px; color: var(--accent); text-decoration: none; font-weight: 600; white-space: nowrap; }
     .song { display: flex; gap: 10px; align-items: center; }
     .art { width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--line); object-fit: cover; }
-    .manual { font-size: .75rem; color: #a3660b; background: #fff4e0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+    .manual { font-size: .75rem; color: #ffc46b; background: #3a2a10; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
     .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; flex: none; padding: 0; font-size: .8rem; }
     .play.playing { background: var(--accent); color: #fff; }
     .tag { font-size: .7rem; font-weight: 700; border: 1px solid var(--muted); color: var(--muted); border-radius: 3px; padding: 0 4px; }
-    .badge { background: #efeaff; color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
+    .badge { background: var(--badge); color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
     #login[hidden], #app[hidden] { display: none; }
     @media print { body * { visibility: hidden; } #printable, #printable * { visibility: visible; } #printable { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; } }
     #printable { display: none; }
+    @media print { body { background: #fff; color: #000; } }
     @media print { #printable { display: grid; } #printable img { width: 70vmin; height: 70vmin; } #printable h2 { font-size: 2.4rem; } }
   </style>
 </head>
@@ -176,7 +179,7 @@
     $('table').hidden = all.length === 0;
 
     if (view === 'songs') {
-      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
+      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th><th></th></tr>' +
         songs.map((s, i) => `<tr>
           <td>${i + 1}</td><td>${esc(s.artist)}</td>
           <td><div class="song">${s.track?.previewUrl || s.track?.source === 'deezer' ? `<button class="play" data-preview="${esc(s.track.previewUrl || 'deezer:' + s.track.id)}" data-deezer="${s.track.source === 'deezer' ? esc(s.track.id) : ''}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
@@ -186,6 +189,7 @@
           </div></div></td>
           <td><span class="badge">${s.count}</span></td><td class="small">${esc(s.requestedBy.join(', '))}</td>
           <td class="links">${s.links.listen ? `<a href="${esc(s.links.listen)}" target="_blank" rel="noopener">${s.track.source === 'deezer' ? 'Deezer' : 'Apple Music'}</a>` : ''}<a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
+          <td><button class="del" data-ids="${esc(s.ids.join(','))}" data-title="${esc(s.title)}" title="Remove this song">✕</button></td>
         </tr>`).join('');
     } else {
       $('table').innerHTML = '<tr><th>When</th><th>Artist</th><th>Title</th><th>Name</th><th>Note</th><th></th></tr>' +
@@ -244,9 +248,13 @@
       player.src = src;
       return player.play().catch(() => { playingUrl = ''; syncPlay(); });
     }
-    const id = e.target.dataset?.id;
-    if (!id || !confirm('Delete this request?')) return;
-    await api('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' });
+    const del = e.target.closest('button.del');
+    if (!del) return;
+    // A grouped song can come from several requests: remove them all.
+    const ids = del.dataset.ids ? del.dataset.ids.split(',') : [del.dataset.id];
+    const what = del.dataset.title ? `"${del.dataset.title}"${ids.length > 1 ? ` (requested ${ids.length} times)` : ''}` : 'this request';
+    if (!confirm(`Remove ${what} from the list?`)) return;
+    await Promise.all(ids.map((id) => api('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' }).catch(() => {})));
     load();
   });
 

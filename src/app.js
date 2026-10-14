@@ -57,11 +57,12 @@ export function groupSongs(requests) {
   for (const r of requests) {
     const key = normalize(r.artist) + '|' + normalize(r.title);
     if (!groups.has(key)) {
-      groups.set(key, { artist: r.artist, title: r.title, track: null, count: 0, requestedBy: [], notes: [], firstAt: r.createdAt });
+      groups.set(key, { artist: r.artist, title: r.title, track: null, ids: [], count: 0, requestedBy: [], notes: [], firstAt: r.createdAt });
     }
     const g = groups.get(key);
     // Show the explicit version when people asked for both.
     if (r.track && (!g.track || (r.track.explicit && !g.track.explicit))) g.track = r.track;
+    g.ids.push(r.id);
     g.count++;
     if (r.name && !g.requestedBy.includes(r.name)) g.requestedBy.push(r.name);
     if (r.note && !g.notes.includes(r.note)) g.notes.push(r.note);

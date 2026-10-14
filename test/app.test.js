@@ -32,6 +32,7 @@ test('guest and admin pages load, config gives the party name', async () => {
   assert.match(await (await fetch(base + '/')).text(), /Request songs/);
   assert.match(await (await fetch(base + '/admin')).text(), /DJ Dashboard/);
   assert.strictEqual((await fetch(base + '/vendor/qrcode.js')).status, 200);
+  assert.strictEqual((await fetch(base + '/background.jpg')).status, fs.existsSync(new URL('../public/background.jpg', import.meta.url)) ? 200 : 404);
   const config = await (await fetch(base + '/api/config')).json();
   assert.strictEqual(config.eventName, 'Test Party');
   assert.strictEqual(config.musicCountry, 'US');
@@ -50,6 +51,7 @@ test('stores, groups duplicates and exports', async () => {
   assert.strictEqual(songs.length, 2);
   assert.strictEqual(songs[0].count, 2);
   assert.deepStrictEqual(songs[0].requestedBy, ['Ana', 'Bo']);
+  assert.strictEqual(songs[0].ids.length, 2); // the dashboard's ✕ removes all of a song's requests
 
   const txt = await (await admin('/export.txt')).text();
   assert.strictEqual(txt, 'Daft Punk - One More Time\nRobyn - Dancing On My Own\n');

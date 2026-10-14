@@ -57,6 +57,7 @@ const STATIC = {
   '/admin': ['admin.html', 'text/html; charset=utf-8'],
   '/admin.html': ['admin.html', 'text/html; charset=utf-8'],
   '/vendor/qrcode.js': ['vendor/qrcode.js', 'text/javascript; charset=utf-8'],
+  '/background.jpg': ['background.jpg', 'image/jpeg'], // the party photo, optional
 };
 
 function readBody(req, limit = 64_000) {
@@ -79,9 +80,10 @@ export const server = http.createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const file = STATIC[url.pathname];
-    if (req.method === 'GET' && file) {
+    const filePath = file && path.join(ROOT, 'public', file[0]);
+    if (req.method === 'GET' && file && fs.existsSync(filePath)) {
       res.writeHead(200, { 'Content-Type': file[1], 'Cache-Control': 'no-store' });
-      return res.end(fs.readFileSync(path.join(ROOT, 'public', file[0])));
+      return res.end(fs.readFileSync(filePath));
     }
     const hasBody = !['GET', 'HEAD'].includes(req.method);
     const request = new Request(url, { method: req.method, headers: req.headers, body: hasBody ? await readBody(req) : undefined });
