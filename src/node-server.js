@@ -58,6 +58,7 @@ const STATIC = {
   '/admin.html': ['admin.html', 'text/html; charset=utf-8'],
   '/vendor/qrcode.js': ['vendor/qrcode.js', 'text/javascript; charset=utf-8'],
   '/background.jpg': ['background.jpg', 'image/jpeg'], // the party photo, optional
+  '/background-dark.jpg': ['background-dark.jpg', 'image/jpeg'], // its dark-mode version
 };
 
 function readBody(req, limit = 64_000) {
