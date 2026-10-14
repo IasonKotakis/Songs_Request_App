@@ -191,18 +191,40 @@
   }
   const badge = (t) => (t?.explicit ? '<span class="e" title="Explicit">E</span>' : t?.clean ? '<span class="clean">Clean</span>' : '');
 
+  const songKey = (t) => norm(t.artist) + '|' + norm(t.title);
+  const appleSearch = async (term, limit) => {
+    const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
+    const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=${limit}&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+    return (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
+  };
+
+  // For a broad search (e.g. "humble") Apple sometimes returns only a song's clean version.
+  // Search for that exact song ("Kendrick Lamar HUMBLE.") to find its explicit version.
+  async function findExplicit(t) {
+    const term = `${t.artist} ${t.title}`.replace(/[\(\[](clean|edited)( version)?[\)\]]/gi, '').replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
+    const matches = await appleSearch(term, 25);
+    return matches.find((m) => m.explicit && songKey(m) === songKey(t)) || null;
+  }
+
   async function search(term) {
     const seq = ++searchSeq;
     try {
-      const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
-      const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=40&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+      const first = explicitFirst(await appleSearch(term, 40)).slice(0, 12);
       if (seq !== searchSeq) return; // a newer search is on its way
-      tracks = explicitFirst((data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack)).slice(0, 12);
-      active = -1; renderResults();
+      tracks = first; active = -1; renderResults();
+
+      const hasExplicit = new Set(tracks.filter((t) => t.explicit).map(songKey));
+      const cleanOnly = tracks.filter((t) => t.clean && !hasExplicit.has(songKey(t))).slice(0, 4);
+      if (!cleanOnly.length) return;
+      const found = (await Promise.all(cleanOnly.map((t) => findExplicit(t).catch(() => null)))).filter(Boolean);
+      if (seq !== searchSeq || !found.length) return;
+      tracks = explicitFirst([...tracks, ...found]); // each explicit version lands just above its clean one
+      if (!results.hidden) renderResults();
     } catch {
       if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
     }
   }
+
 
   // ---------- search results ----------
   const keyOf = (s) => s.track ? 't' + s.track.id : 'm' + (s.artist + '|' + s.title).toLowerCase();
