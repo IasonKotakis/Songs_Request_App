@@ -34,6 +34,8 @@
     .song { display: flex; gap: 10px; align-items: center; }
     .art { width: 40px; height: 40px; border-radius: 5px; flex: none; background: var(--line); object-fit: cover; }
     .manual { font-size: .75rem; color: #a3660b; background: #fff4e0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
+    .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; flex: none; padding: 0; font-size: .8rem; }
+    .play.playing { background: var(--accent); color: #fff; }
     .badge { background: #efeaff; color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
     #login[hidden], #app[hidden] { display: none; }
@@ -174,7 +176,7 @@
       $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
         songs.map((s, i) => `<tr>
           <td>${i + 1}</td><td>${esc(s.artist)}</td>
-          <td><div class="song">${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
+          <td><div class="song">${s.track?.previewUrl ? `<button class="play" data-preview="${esc(s.track.previewUrl)}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
             ${esc(s.title)} ${s.track ? '' : '<span class="manual" title="Typed in by hand, not picked from search: double-check it">typed</span>'}
             ${s.track?.album ? `<div class="muted small">${esc(s.track.album)}</div>` : ''}
             ${s.notes.length ? `<div class="muted small">💬 ${s.notes.map(esc).join('<br>💬 ')}</div>` : ''}
@@ -203,7 +205,25 @@
   });
   $('tabSongs').addEventListener('click', () => { view = 'songs'; $('tabSongs').classList.add('on'); $('tabAll').classList.remove('on'); load(); });
   $('tabAll').addEventListener('click', () => { view = 'all'; $('tabAll').classList.add('on'); $('tabSongs').classList.remove('on'); load(); });
+  // One preview player for the page.
+  const player = new Audio();
+  let playingUrl = '';
+  const syncPlay = () => document.querySelectorAll('[data-preview]').forEach((b) => {
+    const on = b.dataset.preview === playingUrl;
+    b.classList.toggle('playing', on);
+    b.textContent = on ? '❚❚' : '▶';
+  });
+  player.addEventListener('pause', () => { playingUrl = ''; syncPlay(); });
+  player.addEventListener('ended', () => { playingUrl = ''; syncPlay(); });
+
   $('table').addEventListener('click', async (e) => {
+    const preview = e.target.closest('[data-preview]');
+    if (preview) {
+      if (playingUrl === preview.dataset.preview) return player.pause();
+      playingUrl = player.src = preview.dataset.preview;
+      player.play().catch(() => { playingUrl = ''; syncPlay(); });
+      return syncPlay();
+    }
     const id = e.target.dataset?.id;
     if (!id || !confirm('Delete this request?')) return;
     await api('/api/requests/' + encodeURIComponent(id), { method: 'DELETE' });

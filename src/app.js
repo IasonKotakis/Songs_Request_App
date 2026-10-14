@@ -37,6 +37,7 @@ function cleanTrack(t) {
     durationMs: Number.isFinite(durationMs) && durationMs > 0 ? Math.min(Math.round(durationMs), 3_600_000) : 0,
     explicit: t.explicit === true,
     url: safeUrl(t.url, /^(music|itunes)\.apple\.com$/),
+    previewUrl: safeUrl(t.previewUrl, /(^|\.)apple\.com$/), // ~30s clip, e.g. audio-ssl.itunes.apple.com
   };
 }
 
@@ -52,7 +53,7 @@ export function groupSongs(requests) {
     if (!g.track && r.track) g.track = r.track;
     g.count++;
     if (r.name && !g.requestedBy.includes(r.name)) g.requestedBy.push(r.name);
-    if (r.note) g.notes.push(r.note);
+    if (r.note && !g.notes.includes(r.note)) g.notes.push(r.note);
   }
   return [...groups.values()].sort((a, b) => b.count - a.count || a.firstAt.localeCompare(b.firstAt));
 }
@@ -102,12 +103,12 @@ async function keyMatches(provided, expected) {
   return diff === 0;
 }
 
-// Sliding-window limiter: buckets maps ip -> recent timestamps.
-function rateLimited(buckets, ip, max, windowMs) {
+// Sliding-window limiter: buckets maps ip -> recent timestamps, one per song.
+function rateLimited(buckets, ip, max, windowMs, count = 1) {
   const now = Date.now();
   const recent = (buckets.get(ip) || []).filter((t) => now - t < windowMs);
-  const limited = recent.length >= max;
-  if (!limited) recent.push(now);
+  const limited = recent.length + count > max;
+  if (!limited) for (let i = 0; i < count; i++) recent.push(now);
   buckets.set(ip, recent);
   return limited;
 }
@@ -116,7 +117,10 @@ const json = (body, status = 200, headers = {}) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers } });
 const text = (body, type, headers = {}) => new Response(body, { headers: { 'Content-Type': type, 'Cache-Control': 'no-store', ...headers } });
 
-export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', maxPerGuestPerHour = 20 }) {
+const MAX_SONGS_PER_SEND = 30;
+const MAX_BODY = 64_000;
+
+export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', maxPerGuestPerHour = 60 }) {
   const submitBuckets = new Map();
   const config = { eventName, musicCountry, musicApi };
 
@@ -130,7 +134,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
 
     if (method === 'POST' && pathname === '/api/requests') {
       const raw = await request.text();
-      if (raw.length > 10_000) return json({ error: 'Request too large.' }, 413);
+      if (raw.length > MAX_BODY) return json({ error: 'Request too large.' }, 413);
       let body;
       try {
         body = JSON.parse(raw || '{}');
@@ -138,22 +142,34 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
         return json({ error: 'Invalid JSON' }, 400);
       }
       if (body.website) return json({ ok: true }, 201); // honeypot field: silently drop bots
-      if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {
+
+      // A guest sends their whole list at once: { songs: [{ track } or { artist, title }], name, note }.
+      // A single song at the top level ({ track } or { artist, title }) works too.
+      const songs = Array.isArray(body.songs) ? body.songs : [body];
+      if (songs.length === 0) return json({ error: 'Add at least one song.' }, 400);
+      if (songs.length > MAX_SONGS_PER_SEND) return json({ error: `You can send up to ${MAX_SONGS_PER_SEND} songs at a time.` }, 400);
+      const name = clean(body.name, 60);
+      const note = clean(body.note, 200);
+      const entries = songs.map((song) => {
+        const track = cleanTrack(song?.track);
+        return {
+          id: crypto.randomUUID(),
+          artist: track ? track.artist : clean(song?.artist, 120),
+          title: track ? track.title : clean(song?.title, 160),
+          track,
+          name,
+          note,
+          createdAt: new Date().toISOString(),
+        };
+      });
+      if (entries.some((e) => !e.artist || !e.title)) {
+        return json({ error: 'Every song needs both an artist and a title.' }, 400);
+      }
+      if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000, entries.length)) {
         return json({ error: 'Whoa, that is a lot of songs! Try again later.' }, 429);
       }
-      const track = cleanTrack(body.track);
-      const entry = {
-        id: crypto.randomUUID(),
-        artist: track ? track.artist : clean(body.artist, 120),
-        title: track ? track.title : clean(body.title, 160),
-        track,
-        name: clean(body.name, 60),
-        note: clean(body.note, 200),
-        createdAt: new Date().toISOString(),
-      };
-      if (!entry.artist || !entry.title) return json({ error: 'Please pick a song, or fill in both artist and song title.' }, 400);
-      await store.add(entry);
-      return json({ ok: true }, 201);
+      for (const entry of entries) await store.add(entry);
+      return json({ ok: true, added: entries.length }, 201);
     }
 
     // Everything below is admin-only.

@@ -24,10 +24,11 @@ const pickedTrack = {
   id: '697195787', artist: 'Daft Punk', title: 'One More Time', album: 'Discovery',
   artwork: 'https://is1-ssl.mzstatic.com/image/thumb/a/120x120bb.jpg', durationMs: 320357, explicit: false,
   url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
+  previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview/a/b.m4a',
 };
 
 test('guest and admin pages load, config gives the party name', async () => {
-  assert.match(await (await fetch(base + '/')).text(), /Request a song/);
+  assert.match(await (await fetch(base + '/')).text(), /Request songs/);
   assert.match(await (await fetch(base + '/admin')).text(), /DJ Dashboard/);
   assert.strictEqual((await fetch(base + '/vendor/qrcode.js')).status, 200);
   const config = await (await fetch(base + '/api/config')).json();
@@ -83,15 +84,40 @@ test('a picked song keeps its catalog details and merges with typed-in requests'
 });
 
 test('picked-song details are sanitised: only Apple links, bad tracks fall back to typed text', async () => {
-  const evil = { ...pickedTrack, id: '1', artwork: 'https://evil.example/x.jpg', url: 'javascript:alert(1)', durationMs: 'lots' };
+  const evil = { ...pickedTrack, id: '1', artwork: 'https://evil.example/x.jpg', url: 'javascript:alert(1)', previewUrl: 'https://apple.com.evil.example/a.m4a', durationMs: 'lots' };
   await post({ track: evil });
   const t = (await (await admin('/api/requests')).json()).at(-1).track;
   assert.strictEqual(t.artwork, '');
   assert.strictEqual(t.url, '');
+  assert.strictEqual(t.previewUrl, '');
   assert.strictEqual(t.durationMs, 0);
 
   await post({ track: { id: 'not-a-number', artist: 'X', title: 'Y' }, artist: 'Robyn', title: 'Hang With Me' });
   const last = (await (await admin('/api/requests')).json()).at(-1);
   assert.strictEqual(last.title, 'Hang With Me');
   assert.strictEqual(last.track, null);
+});
+
+test('a guest can send their whole list at once', async () => {
+  const before = (await (await admin('/api/requests')).json()).length;
+  const res = await post({
+    songs: [{ track: { ...pickedTrack, id: '7', title: 'Digital Love' } }, { artist: 'Robyn', title: 'Call Your Girlfriend' }],
+    name: 'Dee', note: 'for the dancefloor',
+  });
+  assert.strictEqual(res.status, 201);
+  assert.strictEqual((await res.json()).added, 2);
+  const all = await (await admin('/api/requests')).json();
+  assert.strictEqual(all.length, before + 2);
+  assert.deepStrictEqual(all.slice(-2).map((r) => [r.title, r.name, r.note]), [
+    ['Digital Love', 'Dee', 'for the dancefloor'], ['Call Your Girlfriend', 'Dee', 'for the dancefloor'],
+  ]);
+});
+
+test('a list with a broken song is rejected as a whole, and lists are capped', async () => {
+  const before = (await (await admin('/api/requests')).json()).length;
+  assert.strictEqual((await post({ songs: [{ artist: 'A', title: 'B' }, { artist: 'only artist' }] })).status, 400);
+  assert.strictEqual((await post({ songs: [] })).status, 400);
+  const tooMany = Array.from({ length: 31 }, (_, i) => ({ artist: 'A', title: 'Song ' + i }));
+  assert.strictEqual((await post({ songs: tooMany })).status, 400);
+  assert.strictEqual((await (await admin('/api/requests')).json()).length, before);
 });

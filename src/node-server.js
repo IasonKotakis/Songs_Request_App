@@ -58,7 +58,7 @@ const STATIC = {
   '/vendor/qrcode.js': ['vendor/qrcode.js', 'text/javascript; charset=utf-8'],
 };
 
-function readBody(req, limit = 10_000) {
+function readBody(req, limit = 64_000) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;

@@ -29,7 +29,7 @@ const adminCall = (p, opts = {}) => call(p, { ...opts, headers: { Authorization:
 test('worker: config, submit, list, export, delete on D1', async () => {
   assert.deepStrictEqual(await (await call('/api/config')).json(), { eventName: 'CF Party', musicCountry: 'GR', musicApi: 'https://itunes.apple.com' });
 
-  const track = { id: '42', artist: 'Robyn', title: 'Dancing On My Own', album: 'Body Talk', artwork: '', durationMs: 280000, explicit: false, url: 'https://music.apple.com/x?i=42' };
+  const track = { id: '42', artist: 'Robyn', title: 'Dancing On My Own', album: 'Body Talk', artwork: '', durationMs: 280000, explicit: false, url: 'https://music.apple.com/x?i=42', previewUrl: '' };
   const submit = (body) => call('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   assert.strictEqual((await submit({ track, name: 'Ana' })).status, 201);
   assert.strictEqual((await submit({ artist: 'robyn', title: 'dancing on my own', note: 'peak time' })).status, 201);

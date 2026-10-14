@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Song Requests</title>
   <style>
-    :root { --bg: #0f0b1e; --card: #1b1533; --field: #120e24; --line: #3a3160; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
+    :root { --bg: #0f0b1e; --card: #1b1533; --field: #120e24; --line: #3a3160; --hover: #2a2250; --text: #f4f1ff; --muted: #a79fc9; --accent: #ff4fa3; --accent2: #7c5cff; --ok: #3ddc97; --err: #ff6b6b; }
     * { box-sizing: border-box; }
     body { margin: 0; min-height: 100vh; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: var(--text);
       background: radial-gradient(circle at 20% 0%, #3a1d6e 0, transparent 50%), radial-gradient(circle at 100% 100%, #5a1240 0, transparent 45%), var(--bg); }
@@ -14,7 +14,7 @@
     h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
     p.sub { color: var(--muted); margin: 0 0 24px; }
     form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.35); }
-    label { display: block; font-size: .85rem; font-weight: 600; margin: 14px 0 6px; color: var(--muted); }
+    label, .label { display: block; font-size: .85rem; font-weight: 600; margin: 18px 0 6px; color: var(--muted); }
     label:first-child { margin-top: 0; }
     input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--text); font-size: 1rem; }
     input:focus, textarea:focus { outline: 2px solid var(--accent2); border-color: transparent; }
@@ -23,23 +23,32 @@
     .hp { position: absolute; left: -9999px; }
     [hidden] { display: none !important; }
 
-    .search { position: relative; }
-    .results { list-style: none; margin: 6px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); max-height: 340px; overflow-y: auto; }
-    .results li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; cursor: pointer; }
-    .results li:hover, .results li.active { background: #2a2250; }
-    .results li.info { color: var(--muted); cursor: default; font-size: .9rem; }
-    .results li.info:hover { background: none; }
-    .art { width: 44px; height: 44px; border-radius: 6px; flex: none; background: #2a2250; object-fit: cover; }
-    .meta { min-width: 0; }
+    /* Song rows: used by search results and "Your list" */
+    .songs { list-style: none; margin: 6px 0 0; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--field); }
+    .results { max-height: 360px; overflow-y: auto; }
+    .songs li { display: flex; gap: 10px; align-items: center; padding: 8px; border-radius: 8px; }
+    .results li[data-i] { cursor: pointer; }
+    .results li[data-i]:hover, .results li.active { background: var(--hover); }
+    .songs li.info { color: var(--muted); font-size: .9rem; display: block; }
+    .art { width: 44px; height: 44px; border-radius: 6px; flex: none; background: var(--hover); object-fit: cover; display: grid; place-items: center; color: var(--muted); font-size: 1.2rem; }
+    .meta { min-width: 0; flex: 1; }
     .meta b, .meta span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta span { color: var(--muted); font-size: .85rem; }
     .e { display: inline-block; font-size: .65rem; font-weight: 700; background: var(--muted); color: var(--field); border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 2px; }
+    .icon { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--text); font-size: .95rem; cursor: pointer; display: grid; place-items: center; padding: 0; }
+    .icon:hover { border-color: var(--accent2); }
+    .icon.playing { background: var(--accent2); border-color: var(--accent2); }
+    .icon.add { border-color: var(--accent); color: var(--accent); font-size: 1.3rem; }
+    .icon.added { background: var(--ok); border-color: var(--ok); color: var(--field); font-weight: 700; }
+    .icon.remove { color: var(--muted); }
 
-    .picked { display: flex; gap: 12px; align-items: center; padding: 10px; border: 1px solid var(--accent2); border-radius: 12px; background: var(--field); }
-    .picked .art { width: 56px; height: 56px; }
-    .picked .meta { flex: 1; }
     .link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; text-decoration: underline; }
     .hint { color: var(--muted); font-size: .85rem; margin: 8px 0 0; }
+    .manual { margin-top: 10px; padding: 12px; border: 1px dashed var(--line); border-radius: 12px; }
+    .manual input + input { margin-top: 8px; }
+    .row { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+    button.small { padding: 10px 16px; border-radius: 10px; border: 0; font-weight: 700; color: #fff; background: var(--accent2); cursor: pointer; font-size: .95rem; }
+    .empty { color: var(--muted); font-size: .9rem; padding: 14px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; margin-top: 6px; }
 
     button.submit { width: 100%; margin-top: 20px; padding: 14px; font-size: 1.05rem; font-weight: 700; color: #fff; border: 0; border-radius: 12px; cursor: pointer;
       background: linear-gradient(90deg, var(--accent), var(--accent2)); }
@@ -51,49 +60,40 @@
 </head>
 <body>
 <main>
-  <h1>🎶 Request a song for <span class="event-name">the party</span></h1>
-  <p class="sub">Drop the tracks you want to hear. Add as many as you like!</p>
+  <h1>🎶 Request songs for <span class="event-name">the party</span></h1>
+  <p class="sub">Search, tap ▶ to hear a preview, and tap + to add songs to your list. Send them all in one go.</p>
 
   <form id="f" autocomplete="off" novalidate>
-    <!-- Step 1: search the catalog -->
-    <div id="searchBox">
-      <label for="q">Search for a song</label>
-      <div class="search">
-        <input id="q" type="search" placeholder="Song or artist, e.g. One More Time" enterkeyhint="search"
-               role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list">
-        <ul id="results" class="results" role="listbox" hidden></ul>
-      </div>
-      <p class="hint">Can't find it? <button type="button" class="link" id="manualBtn">Type it in yourself</button></p>
+    <label for="q">Search for a song</label>
+    <div class="search">
+      <input id="q" type="search" placeholder="Song or artist, e.g. One More Time" enterkeyhint="search"
+             role="combobox" aria-expanded="false" aria-controls="results" aria-autocomplete="list">
+      <ul id="results" class="songs results" role="listbox" hidden></ul>
     </div>
+    <p class="hint" id="manualHint">Can't find it? <button type="button" class="link" id="manualBtn">Type it in yourself</button></p>
 
-    <!-- The song picked from search -->
-    <div id="pickedBox" hidden>
-      <label>Your song</label>
-      <div class="picked">
-        <img class="art" id="pArt" alt="">
-        <div class="meta"><b id="pTitle"></b><span id="pSub"></span></div>
-        <button type="button" class="link" id="changeBtn">Change</button>
+    <div class="manual" id="manualBox" hidden>
+      <input id="artist" maxlength="120" placeholder="Artist, e.g. Daft Punk" aria-label="Artist">
+      <input id="title" maxlength="160" placeholder="Song title, e.g. One More Time" aria-label="Song title">
+      <div class="row">
+        <button type="button" class="small" id="manualAdd">Add to list</button>
+        <button type="button" class="link" id="manualCancel">Cancel</button>
       </div>
     </div>
 
-    <!-- Manual fallback -->
-    <div id="manualBox" hidden>
-      <label for="artist">Artist</label>
-      <input id="artist" name="artist" maxlength="120" placeholder="e.g. Daft Punk">
-      <label for="title">Song title</label>
-      <input id="title" name="title" maxlength="160" placeholder="e.g. One More Time">
-      <p class="hint"><button type="button" class="link" id="backBtn">← Back to search</button></p>
-    </div>
+    <div class="label">Your list <span id="listCount" class="opt"></span></div>
+    <ul id="mine" class="songs" hidden></ul>
+    <div id="emptyList" class="empty">Your list is empty. Search above and tap + to add songs.</div>
 
     <label for="name">Your name <span class="opt">(optional)</span></label>
-    <input id="name" name="name" maxlength="60" placeholder="So the DJ can shout you out">
+    <input id="name" maxlength="60" placeholder="So the DJ can shout you out">
 
     <label for="note">Note for the DJ <span class="opt">(optional)</span></label>
-    <textarea id="note" name="note" maxlength="200" placeholder="Remix, version, perfect moment to play it…"></textarea>
+    <textarea id="note" maxlength="200" placeholder="Remixes, versions, the perfect moment to play them…"></textarea>
 
-    <input class="hp" name="website" tabindex="-1" aria-hidden="true">
+    <input class="hp" id="website" tabindex="-1" aria-hidden="true">
 
-    <button class="submit" id="btn" type="submit">Send request</button>
+    <button class="submit" id="btn" type="submit">Send my list</button>
     <div id="msg" role="status"></div>
   </form>
   <p class="count" id="count"></p>
@@ -101,43 +101,22 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
-  const f = $('f'), q = $('q'), list = $('results'), msg = $('msg');
-  const BLANK = 'data:image/gif;base64,R0lGODlhAQABAAAAACw=';
-  let mode = 'search'; // 'search' | 'picked' | 'manual'
-  let picked = null;
-  let tracks = [];
+  const q = $('q'), results = $('results'), mine = $('mine'), msg = $('msg');
+  const MAX_SONGS = 30;
+  let tracks = [];      // current search results
+  let myList = [];      // [{ key, track } or { key, artist, title }]
   let active = -1;
   let timer, searchSeq = 0;
-  let sent = 0;
+  let sentTotal = 0;
 
-  try { f.name.value = localStorage.getItem('guestName') || ''; } catch {}
+  // ---------- remember the guest's name and unsent list ----------
+  try {
+    $('name').value = localStorage.getItem('guestName') || '';
+    myList = JSON.parse(localStorage.getItem('songList') || '[]');
+  } catch {}
+  const saveList = () => { try { localStorage.setItem('songList', JSON.stringify(myList)); } catch {} };
 
-  function setMode(m) {
-    mode = m;
-    $('searchBox').hidden = m !== 'search';
-    $('pickedBox').hidden = m !== 'picked';
-    $('manualBox').hidden = m !== 'manual';
-    closeList();
-  }
-
-  function closeList() { list.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; }
-  function showInfo(text, withManual) {
-    list.innerHTML = `<li class="info">${esc(text)}${withManual ? ' <button type="button" class="link" data-manual>Type it in yourself</button>' : ''}</li>`;
-    list.hidden = false;
-  }
-
-  function render() {
-    if (!tracks.length) return showInfo('No songs found. Try different words, or', true);
-    list.innerHTML = tracks.map((t, i) => `
-      <li role="option" data-i="${i}" class="${i === active ? 'active' : ''}">
-        <img class="art" src="${esc(t.artwork) || BLANK}" alt="" loading="lazy">
-        <div class="meta"><b>${esc(t.title)}${t.explicit ? '<span class="e">E</span>' : ''}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
-      </li>`).join('');
-    list.hidden = false;
-    q.setAttribute('aria-expanded', 'true');
-  }
-
-  // Settings from the server: party name and which country's catalog to search.
+  // ---------- settings from the server ----------
   const config = fetch('/api/config').then((r) => r.json()).catch(() => ({}));
   config.then((c) => {
     if (!c.eventName) return;
@@ -145,8 +124,32 @@
     document.title = 'Song Requests · ' + c.eventName;
   });
 
-  // Apple's iTunes Search API is queried straight from the guest's phone (free, no key).
-  // It is loaded via JSONP, the method Apple documents for use from web pages.
+  // ---------- previews: one player for the whole page ----------
+  const player = new Audio();
+  let playingUrl = '';
+  function syncPlayButtons() {
+    document.querySelectorAll('[data-preview]').forEach((b) => {
+      const on = b.dataset.preview === playingUrl;
+      b.classList.toggle('playing', on);
+      b.textContent = on ? '❚❚' : '▶';
+      b.setAttribute('aria-label', on ? 'Stop preview' : 'Play preview');
+    });
+  }
+  function togglePreview(url) {
+    if (playingUrl === url) { player.pause(); return; }
+    playingUrl = url;
+    player.src = url;
+    player.play().catch(() => { playingUrl = ''; syncPlayButtons(); });
+    syncPlayButtons();
+  }
+  player.addEventListener('pause', () => { playingUrl = ''; syncPlayButtons(); });
+  player.addEventListener('ended', () => { playingUrl = ''; syncPlayButtons(); });
+  const cover = (t) => t?.artwork ? `<img class="art" src="${esc(t.artwork)}" alt="" loading="lazy">` : '<div class="art" aria-hidden="true">♪</div>';
+  const playButton = (t) => t?.previewUrl
+    ? `<button type="button" class="icon" data-preview="${esc(t.previewUrl)}" aria-label="Play preview">▶</button>` : '';
+
+  // ---------- Apple's iTunes Search API, queried from the guest's phone (free, no key) ----------
+  // Loaded via JSONP, the method Apple documents for use from web pages.
   let jsonpSeq = 0;
   function jsonp(src) {
     return new Promise((resolve, reject) => {
@@ -164,73 +167,155 @@
   const toTrack = (r) => ({
     id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
     artwork: (r.artworkUrl100 || '').replace('100x100bb', '120x120bb'), durationMs: r.trackTimeMillis || 0,
-    explicit: r.trackExplicitness === 'explicit', url: r.trackViewUrl || '',
+    explicit: r.trackExplicitness === 'explicit', url: r.trackViewUrl || '', previewUrl: r.previewUrl || '',
   });
 
   async function search(term) {
     const seq = ++searchSeq;
     try {
       const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
-      const data = await jsonp(`${musicApi}/search?media=music&entity=song&limit=8&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
-      if (seq !== searchSeq || mode !== 'search') return; // a newer search is on its way
+      const data = await jsonp(`${musicApi}/search?media=music&entity=song&limit=10&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+      if (seq !== searchSeq) return; // a newer search is on its way
       tracks = (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
-      active = -1; render();
+      active = -1; renderResults();
     } catch {
       if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
     }
   }
 
-  function pick(t) {
-    picked = t;
-    $('pArt').src = t.artwork || BLANK;
-    $('pTitle').textContent = t.title;
-    $('pSub').textContent = t.artist + (t.album ? ' · ' + t.album : '');
-    setMode('picked');
-    msg.textContent = '';
+  // ---------- search results ----------
+  const keyOf = (s) => s.track ? 't' + s.track.id : 'm' + (s.artist + '|' + s.title).toLowerCase();
+  const inList = (key) => myList.some((s) => s.key === key);
+
+  function closeResults() { results.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; }
+  function showInfo(text, withManual) {
+    results.innerHTML = `<li class="info">${esc(text)}${withManual ? ' <button type="button" class="link" data-manual>type it in yourself</button>' : ''}</li>`;
+    results.hidden = false;
   }
 
+  function renderResults() {
+    if (!tracks.length) return showInfo('No songs found. Try different words, or', true);
+    results.innerHTML = tracks.map((t, i) => {
+      const added = inList('t' + t.id);
+      return `<li role="option" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${added}">
+        ${cover(t)}
+        <div class="meta"><b>${esc(t.title)}${t.explicit ? '<span class="e">E</span>' : ''}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
+        ${playButton(t)}
+        <span class="icon ${added ? 'added' : 'add'}" aria-hidden="true">${added ? '✓' : '+'}</span>
+      </li>`;
+    }).join('');
+    results.hidden = false;
+    q.setAttribute('aria-expanded', 'true');
+    syncPlayButtons();
+  }
+
+  // Tapping a result adds it to the list, tapping it again takes it out.
+  function toggleTrack(t) {
+    const key = 't' + t.id;
+    if (inList(key)) removeFromList(key);
+    else addToList({ key, track: t });
+    renderResults();
+  }
+
+  // ---------- your list ----------
+  function addToList(song) {
+    msg.textContent = '';
+    if (inList(song.key)) return;
+    if (myList.length >= MAX_SONGS) {
+      msg.className = 'err';
+      msg.textContent = `That's ${MAX_SONGS} songs! Send this list first, then start another.`;
+      return;
+    }
+    myList.push(song);
+    saveList(); renderList();
+  }
+  function removeFromList(key) {
+    myList = myList.filter((s) => s.key !== key);
+    saveList(); renderList();
+  }
+
+  function renderList() {
+    const n = myList.length;
+    $('listCount').textContent = n ? `(${n})` : '';
+    $('emptyList').hidden = n > 0;
+    mine.hidden = n === 0;
+    $('btn').textContent = n ? `Send ${n} song${n === 1 ? '' : 's'}` : 'Send my list';
+    mine.innerHTML = myList.map((s) => {
+      const t = s.track;
+      return `<li>
+        ${cover(t)}
+        <div class="meta"><b>${esc(t ? t.title : s.title)}</b><span>${esc(t ? t.artist : s.artist)}${t ? '' : ' · typed in'}</span></div>
+        ${playButton(t)}
+        <button type="button" class="icon remove" data-remove="${esc(s.key)}" aria-label="Remove from list">✕</button>
+      </li>`;
+    }).join('');
+    syncPlayButtons();
+  }
+
+  // ---------- events ----------
   q.addEventListener('input', () => {
     clearTimeout(timer);
     const term = q.value.trim();
-    if (term.length < 2) { searchSeq++; return closeList(); }
+    if (term.length < 2) { searchSeq++; return closeResults(); }
     showInfo('Searching…');
     timer = setTimeout(() => search(term), 300);
   });
+  q.addEventListener('focus', () => { if (tracks.length && q.value.trim().length >= 2) renderResults(); });
   q.addEventListener('keydown', (e) => {
-    if (list.hidden || !tracks.length) return;
-    if (e.key === 'ArrowDown') { active = Math.min(active + 1, tracks.length - 1); render(); e.preventDefault(); }
-    else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); render(); e.preventDefault(); }
-    else if (e.key === 'Enter') { e.preventDefault(); pick(tracks[Math.max(active, 0)]); }
-    else if (e.key === 'Escape') closeList();
+    if (results.hidden || !tracks.length) return;
+    if (e.key === 'ArrowDown') { active = Math.min(active + 1, tracks.length - 1); renderResults(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { active = Math.max(active - 1, 0); renderResults(); e.preventDefault(); }
+    else if (e.key === 'Enter') { e.preventDefault(); toggleTrack(tracks[Math.max(active, 0)]); }
+    else if (e.key === 'Escape') closeResults();
   });
-  list.addEventListener('click', (e) => {
-    if (e.target.closest('[data-manual]')) return startManual();
-    const li = e.target.closest('li[data-i]');
-    if (li) pick(tracks[+li.dataset.i]);
-  });
-  document.addEventListener('click', (e) => { if (!e.target.closest('.search')) closeList(); });
 
-  function startManual() {
+  document.addEventListener('click', (e) => {
+    const preview = e.target.closest('[data-preview]');
+    if (preview) return togglePreview(preview.dataset.preview);
+    if (e.target.closest('[data-manual]')) return openManual();
+    const remove = e.target.closest('[data-remove]');
+    if (remove) { removeFromList(remove.dataset.remove); if (!results.hidden && tracks.length) renderResults(); return; }
+    const li = e.target.closest('#results li[data-i]');
+    if (li) return toggleTrack(tracks[+li.dataset.i]);
+    if (!e.target.closest('.search')) closeResults();
+  });
+
+  function openManual() {
     // Pre-fill the title with whatever they searched for.
-    if (q.value.trim() && !f.title.value) f.title.value = q.value.trim();
-    setMode('manual');
-    f.artist.focus();
+    if (q.value.trim() && !$('title').value) $('title').value = q.value.trim();
+    closeResults();
+    $('manualBox').hidden = false; $('manualHint').hidden = true;
+    $('artist').focus();
   }
-  $('manualBtn').addEventListener('click', startManual);
-  $('backBtn').addEventListener('click', () => { setMode('search'); q.focus(); });
-  $('changeBtn').addEventListener('click', () => { picked = null; setMode('search'); q.focus(); q.select(); if (q.value.trim().length >= 2) render(); });
+  function closeManual() {
+    $('artist').value = ''; $('title').value = '';
+    $('manualBox').hidden = true; $('manualHint').hidden = false;
+  }
+  function addManual() {
+    const artist = $('artist').value.trim(), title = $('title').value.trim();
+    if (!artist || !title) {
+      msg.className = 'err'; msg.textContent = 'Please fill in both artist and song title.';
+      return false;
+    }
+    addToList({ key: keyOf({ artist, title }), artist, title });
+    closeManual();
+    return true;
+  }
+  $('manualBtn').addEventListener('click', openManual);
+  $('manualCancel').addEventListener('click', closeManual);
+  $('manualAdd').addEventListener('click', addManual);
+  [$('artist'), $('title')].forEach((el) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addManual(); } }));
 
-  f.addEventListener('submit', async (e) => {
+  $('f').addEventListener('submit', async (e) => {
     e.preventDefault();
-    msg.className = 'err';
-    let song;
-    if (mode === 'picked') song = { track: picked, artist: picked.artist, title: picked.title };
-    else if (mode === 'manual') {
-      song = { artist: f.artist.value.trim(), title: f.title.value.trim() };
-      if (!song.artist || !song.title) return (msg.textContent = 'Please fill in both artist and song title.');
-    } else return (msg.textContent = 'Search for a song and tap it to pick it.');
-
-    const data = { ...song, name: f.name.value, note: f.note.value, website: f.website.value };
+    // A typed-in song they forgot to add counts too.
+    if (!$('manualBox').hidden && ($('artist').value.trim() || $('title').value.trim()) && !addManual()) return;
+    if (!myList.length) {
+      msg.className = 'err'; msg.textContent = 'Add at least one song to your list first.';
+      return;
+    }
+    const songs = myList.map((s) => (s.track ? { track: s.track } : { artist: s.artist, title: s.title }));
+    const data = { songs, name: $('name').value, note: $('note').value, website: $('website').value };
     $('btn').disabled = true;
     msg.className = ''; msg.textContent = '';
     try {
@@ -238,12 +323,13 @@
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Something went wrong.');
       try { localStorage.setItem('guestName', data.name || ''); } catch {}
+      player.pause();
+      sentTotal += songs.length;
       msg.className = 'ok';
-      msg.textContent = `✅ "${song.title}" added! Got another one?`;
-      sent++;
-      $('count').textContent = `You've requested ${sent} song${sent === 1 ? '' : 's'} so far.`;
-      picked = null; q.value = ''; f.artist.value = ''; f.title.value = ''; f.note.value = '';
-      setMode('search');
+      msg.textContent = `✅ ${songs.length} song${songs.length === 1 ? '' : 's'} sent to the DJ! You can add more anytime.`;
+      $('count').textContent = `You've requested ${sentTotal} song${sentTotal === 1 ? '' : 's'} so far.`;
+      myList = []; saveList(); renderList();
+      q.value = ''; $('note').value = ''; tracks = []; closeResults();
     } catch (err) {
       msg.className = 'err';
       msg.textContent = err.message;
@@ -251,6 +337,8 @@
       $('btn').disabled = false;
     }
   });
+
+  renderList();
 </script>
 </body>
 </html>

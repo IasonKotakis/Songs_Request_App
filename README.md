@@ -3,11 +3,11 @@
 A tiny app that lets guests scan a QR code and drop in song requests before (and during) the party.
 The DJ gets a dashboard where they can see every request and export the list to build a playlist.
 
-- **Guest page** (`/`): a mobile-friendly form. Guests type a song or artist and pick it from a dropdown with album art, similar to Spotify's search. If a song isn't in the catalog, they can type the artist and title in by hand. Name and a note for the DJ are optional. Guests can send as many songs as they like.
+- **Guest page** (`/`): a mobile-friendly page. Guests search for songs and see a dropdown with album art, similar to Spotify's search. They tap ▶ to hear a ~30-second preview, so they know they've got the right song, and tap + to add it to their list. They can keep searching and adding, then send the whole list with one button. Songs missing from the catalog can be typed in by hand. An unsent list is kept if they close the page. Name and a note for the DJ are optional.
 - **DJ dashboard** (`/admin`, protected by a password):
   - the QR code for the guest page, plus the plain link, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first
-  - album art and album name for each song, plus a direct **Apple Music** link for songs picked from search
+  - album art, album name and a ▶ 30-second preview for each song, plus a direct **Apple Music** link for songs picked from search
   - songs that were typed in by hand are marked **typed**, so you know to double-check them
   - one-click Spotify / YouTube / Beatport search links for each song
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
@@ -59,7 +59,7 @@ To change something later (e.g. the party name), edit `wrangler.jsonc` and run `
 | `ADMIN_KEY` | `changeme` locally; must be set on Cloudflare | Password for the DJ dashboard and exports |
 | `EVENT_NAME` | `The Party` | Shown on the pages |
 | `MUSIC_COUNTRY` | `US` | Which country's music catalog to search (two-letter code) |
-| `MAX_PER_GUEST_PER_HOUR` | `20` | Basic spam limit, counted per IP address |
+| `MAX_PER_GUEST_PER_HOUR` | `60` | Basic spam limit: songs per hour from one IP address |
 | `PORT`, `DATA_DIR` | `3000`, `./data` | Node version only: port, and where `requests.json` is saved |
 
 On Cloudflare, `ADMIN_KEY` is a secret (`npm run cf:password`) and the rest go under `vars` in `wrangler.jsonc`. Locally, they are environment variables, e.g. `ADMIN_KEY=secret EVENT_NAME="My Party" npm start`.
