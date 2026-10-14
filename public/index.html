@@ -34,7 +34,9 @@
     .meta { min-width: 0; flex: 1; }
     .meta b, .meta span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .meta span { color: var(--muted); font-size: .85rem; }
-    .e { display: inline-block; font-size: .65rem; font-weight: 700; background: var(--muted); color: var(--field); border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 2px; }
+    .meta .e, .meta .clean, .e, .clean { display: inline-block; white-space: nowrap; font-size: .65rem; font-weight: 700; border-radius: 3px; padding: 0 4px; margin-left: 4px; vertical-align: 2px; }
+    .e { background: var(--text); color: var(--field); }
+    .clean { border: 1px solid var(--muted); color: var(--muted); }
     .icon { flex: none; width: 38px; height: 38px; border-radius: 50%; border: 1px solid var(--line); background: transparent; color: var(--text); font-size: .95rem; cursor: pointer; display: grid; place-items: center; padding: 0; }
     .icon:hover { border-color: var(--accent2); }
     .icon.playing { background: var(--accent2); border-color: var(--accent2); }
@@ -167,16 +169,35 @@
   const toTrack = (r) => ({
     id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
     artwork: (r.artworkUrl100 || '').replace('100x100bb', '120x120bb'), durationMs: r.trackTimeMillis || 0,
-    explicit: r.trackExplicitness === 'explicit', url: r.trackViewUrl || '', previewUrl: r.previewUrl || '',
+    explicit: r.trackExplicitness === 'explicit', clean: r.trackExplicitness === 'cleaned',
+    url: r.trackViewUrl || '', previewUrl: r.previewUrl || '',
   });
+
+  // Apple often lists a song's clean version first, or several copies from different albums.
+  // Show each song once, explicit version first with the clean version right under it.
+  const norm = (s) => s.toLowerCase().replace(/[\(\[](clean|explicit)( version)?[\)\]]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+  function explicitFirst(list) {
+    const songs = new Map();
+    for (const t of list) {
+      const key = norm(t.artist) + '|' + norm(t.title);
+      if (!songs.has(key)) songs.set(key, []);
+      songs.get(key).push(t);
+    }
+    return [...songs.values()].flatMap((versions) => {
+      const explicit = versions.find((t) => t.explicit);
+      const clean = versions.find((t) => t.clean);
+      return explicit ? [explicit, clean].filter(Boolean) : [versions.find((t) => !t.clean) || clean];
+    });
+  }
+  const badge = (t) => (t?.explicit ? '<span class="e" title="Explicit">E</span>' : t?.clean ? '<span class="clean">Clean</span>' : '');
 
   async function search(term) {
     const seq = ++searchSeq;
     try {
       const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
-      const data = await jsonp(`${musicApi}/search?media=music&entity=song&limit=10&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+      const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=40&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
       if (seq !== searchSeq) return; // a newer search is on its way
-      tracks = (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
+      tracks = explicitFirst((data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack)).slice(0, 12);
       active = -1; renderResults();
     } catch {
       if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
@@ -199,7 +220,7 @@
       const added = inList('t' + t.id);
       return `<li role="option" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${added}">
         ${cover(t)}
-        <div class="meta"><b>${esc(t.title)}${t.explicit ? '<span class="e">E</span>' : ''}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
+        <div class="meta"><b>${esc(t.title)}${badge(t)}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
         ${playButton(t)}
         <span class="icon ${added ? 'added' : 'add'}" aria-hidden="true">${added ? '✓' : '+'}</span>
       </li>`;
@@ -244,7 +265,7 @@
       const t = s.track;
       return `<li>
         ${cover(t)}
-        <div class="meta"><b>${esc(t ? t.title : s.title)}</b><span>${esc(t ? t.artist : s.artist)}${t ? '' : ' · typed in'}</span></div>
+        <div class="meta"><b>${esc(t ? t.title : s.title)}${badge(t)}</b><span>${esc(t ? t.artist : s.artist)}${t ? '' : ' · typed in'}</span></div>
         ${playButton(t)}
         <button type="button" class="icon remove" data-remove="${esc(s.key)}" aria-label="Remove from list">✕</button>
       </li>`;

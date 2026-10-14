@@ -25,6 +25,7 @@ const pickedTrack = {
   artwork: 'https://is1-ssl.mzstatic.com/image/thumb/a/120x120bb.jpg', durationMs: 320357, explicit: false,
   url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
   previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview/a/b.m4a',
+  clean: false,
 };
 
 test('guest and admin pages load, config gives the party name', async () => {
@@ -120,4 +121,14 @@ test('a list with a broken song is rejected as a whole, and lists are capped', a
   const tooMany = Array.from({ length: 31 }, (_, i) => ({ artist: 'A', title: 'Song ' + i }));
   assert.strictEqual((await post({ songs: tooMany })).status, 400);
   assert.strictEqual((await (await admin('/api/requests')).json()).length, before);
+});
+
+test('clean versions are flagged, and the dashboard shows the explicit version when both were asked for', async () => {
+  const humble = { ...pickedTrack, artist: 'Kendrick Lamar', title: 'HUMBLE.', album: 'DAMN.', url: 'https://music.apple.com/x?i=2' };
+  await post({ songs: [{ track: { ...humble, id: '1', clean: true } }, { track: { ...humble, id: '2', explicit: true, clean: true } }] });
+  const all = await (await admin('/api/requests')).json();
+  assert.deepStrictEqual(all.slice(-2).map((r) => [r.track.explicit, r.track.clean]), [[false, true], [true, false]]);
+  const song = (await (await admin('/api/songs')).json()).find((x) => x.title === 'HUMBLE.');
+  assert.strictEqual(song.count, 2);
+  assert.strictEqual(song.track.id, '2');
 });

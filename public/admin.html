@@ -36,6 +36,7 @@
     .manual { font-size: .75rem; color: #a3660b; background: #fff4e0; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
     .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; flex: none; padding: 0; font-size: .8rem; }
     .play.playing { background: var(--accent); color: #fff; }
+    .tag { font-size: .7rem; font-weight: 700; border: 1px solid var(--muted); color: var(--muted); border-radius: 3px; padding: 0 4px; }
     .badge { background: #efeaff; color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
     #login[hidden], #app[hidden] { display: none; }
@@ -177,7 +178,7 @@
         songs.map((s, i) => `<tr>
           <td>${i + 1}</td><td>${esc(s.artist)}</td>
           <td><div class="song">${s.track?.previewUrl ? `<button class="play" data-preview="${esc(s.track.previewUrl)}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
-            ${esc(s.title)} ${s.track ? '' : '<span class="manual" title="Typed in by hand, not picked from search: double-check it">typed</span>'}
+            ${esc(s.title)} ${s.track ? (s.track.explicit ? '<span class="tag">E</span>' : s.track.clean ? '<span class="tag" title="The clean (edited) version was picked">Clean</span>' : '') : '<span class="manual" title="Typed in by hand, not picked from search: double-check it">typed</span>'}
             ${s.track?.album ? `<div class="muted small">${esc(s.track.album)}</div>` : ''}
             ${s.notes.length ? `<div class="muted small">💬 ${s.notes.map(esc).join('<br>💬 ')}</div>` : ''}
           </div></div></td>

@@ -36,6 +36,7 @@ function cleanTrack(t) {
     artwork: safeUrl(t.artwork, /(^|\.)mzstatic\.com$/),
     durationMs: Number.isFinite(durationMs) && durationMs > 0 ? Math.min(Math.round(durationMs), 3_600_000) : 0,
     explicit: t.explicit === true,
+    clean: t.explicit !== true && t.clean === true,
     url: safeUrl(t.url, /^(music|itunes)\.apple\.com$/),
     previewUrl: safeUrl(t.previewUrl, /(^|\.)apple\.com$/), // ~30s clip, e.g. audio-ssl.itunes.apple.com
   };
@@ -50,7 +51,8 @@ export function groupSongs(requests) {
       groups.set(key, { artist: r.artist, title: r.title, track: null, count: 0, requestedBy: [], notes: [], firstAt: r.createdAt });
     }
     const g = groups.get(key);
-    if (!g.track && r.track) g.track = r.track;
+    // Show the explicit version when people asked for both.
+    if (r.track && (!g.track || (r.track.explicit && !g.track.explicit))) g.track = r.track;
     g.count++;
     if (r.name && !g.requestedBy.includes(r.name)) g.requestedBy.push(r.name);
     if (r.note && !g.notes.includes(r.note)) g.notes.push(r.note);
