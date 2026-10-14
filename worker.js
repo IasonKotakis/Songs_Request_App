@@ -11,6 +11,7 @@ function d1Store(db) {
     track: r.track ? JSON.parse(r.track) : null,
     name: r.name,
     note: r.note,
+    voter: r.voter || '',
     createdAt: r.created_at,
   });
   return {
@@ -20,8 +21,8 @@ function d1Store(db) {
     },
     async add(e) {
       await db
-        .prepare('INSERT INTO requests (id, artist, title, track, name, note, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)')
-        .bind(e.id, e.artist, e.title, e.track ? JSON.stringify(e.track) : null, e.name, e.note, e.createdAt)
+        .prepare('INSERT INTO requests (id, artist, title, track, name, note, voter, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)')
+        .bind(e.id, e.artist, e.title, e.track ? JSON.stringify(e.track) : null, e.name, e.note, e.voter || '', e.createdAt)
         .run();
     },
     async remove(id) {

@@ -3,7 +3,8 @@
 A tiny app that lets guests scan a QR code and drop in song requests before (and during) the party.
 The DJ gets a dashboard where they can see every request and export the list to build a playlist.
 
-- **Guest page** (`/`): a mobile-friendly page. Guests search for songs and see a dropdown with album art, similar to Spotify's search. They tap ▶ to hear a ~30-second preview, so they know they've got the right song, and tap + to add it to their list. They can keep searching and adding, then send the whole list with one button. When a song has both versions, the explicit one is listed first, marked **E**, with the **Clean** one right under it. Songs missing from the catalog can be typed in by hand. An unsent list is kept if they close the page. Name and a note for the DJ are optional.
+- **Guest page** (`/`): a mobile-friendly page. Guests search for songs and see a dropdown with album art, similar to Spotify's search. They tap ▶ to hear a ~30-second preview, so they know they've got the right song, and tap + to add it to their list. They can keep searching and adding, then send the whole list with one button. When a song has both versions, the explicit one is listed first, marked **E**, with the **Clean** one right under it. Songs missing from the catalog can be typed in by hand. An unsent list is kept if they close the page. Guests give their name (converted to Greeklish if typed in Greek, e.g. Στέργιος → Stergios); a note for the DJ is optional.
+- **Already requested** (guest page): every requested song with its 👍 count and a filter box. Guests tap 👍 instead of requesting a song again, and adding a song that's already on the list offers a 👍 instead. Each phone counts once per song.
 - **DJ dashboard** (`/admin`, protected by a password):
   - the QR code for the guest page, plus the plain link, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first

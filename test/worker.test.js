@@ -8,7 +8,8 @@ import worker from '../worker.js';
 
 function fakeD1() {
   const db = new DatabaseSync(':memory:');
-  db.exec(fs.readFileSync(new URL('../migrations/0001_create_requests.sql', import.meta.url), 'utf8'));
+  const dir = new URL('../migrations/', import.meta.url);
+  for (const file of fs.readdirSync(dir).sort()) db.exec(fs.readFileSync(new URL(file, dir), 'utf8'));
   return {
     prepare(sql) {
       let params = [];
@@ -54,4 +55,14 @@ test('worker: config, submit, list, export, delete on D1', async () => {
 test('worker: refuses to run without an admin key', async () => {
   const res = await worker.fetch(new Request('https://x.workers.dev/api/config'), { DB: fakeD1() });
   assert.strictEqual(res.status, 500);
+});
+
+test('worker: votes are stored with the device id on D1', async () => {
+  const send = (path, body) => call(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  await send('/api/requests', { artist: 'Robyn', title: 'Hang With Me', name: 'Ana', voter: 'device-ana-123' });
+  const key = (await (await call('/api/public/songs')).json()).find((s) => s.title === 'Hang With Me').key;
+  assert.strictEqual((await (await send('/api/votes', { key, voter: 'device-bo-1234', name: 'Bo' })).json()).count, 2);
+  assert.strictEqual((await (await send('/api/votes', { key, voter: 'device-bo-1234', name: 'Bo' })).json()).already, true);
+  const mine = (await (await call('/api/public/songs?voter=device-bo-1234')).json()).find((s) => s.key === key);
+  assert.strictEqual(mine.mine, true);
 });

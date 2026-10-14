@@ -166,3 +166,40 @@ test('songs carry a genre, and exports can be limited to one genre', async () =>
   assert.strictEqual(await (await admin('/export.txt?genre=Unknown')).text(), toTxtTitles(songs.filter((x) => x.genre === 'Unknown')));
 });
 const toTxtTitles = (list) => list.map((x) => `${x.artist} - ${x.title}`).join('\n') + '\n';
+
+const vote = (body) => fetch(base + '/api/votes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const publicSongs = async (voter = '') => (await fetch(base + '/api/public/songs?voter=' + voter)).json();
+
+test('guests see what was requested (counts only), upvote once, and can take it back', async () => {
+  await post({ songs: [{ artist: 'Outkast', title: 'Hey Ya!' }], name: 'Eve', note: 'secret note', voter: 'device-eve-1' });
+  let hey = (await publicSongs('device-eve-1')).find((s) => s.title === 'Hey Ya!');
+  assert.deepStrictEqual([hey.count, hey.mine], [1, true]);
+  assert.ok(!('requestedBy' in hey) && !('notes' in hey) && !JSON.stringify(hey).includes('Eve'));
+
+  // Someone else 👍s it: needs a name, counts once however often they tap.
+  assert.strictEqual((await vote({ key: hey.key, voter: 'device-finn-1' })).status, 400);
+  assert.strictEqual((await (await vote({ key: hey.key, voter: 'device-finn-1', name: 'Finn' })).json()).count, 2);
+  assert.strictEqual((await (await vote({ key: hey.key, voter: 'device-finn-1', name: 'Finn' })).json()).already, true);
+  hey = (await publicSongs('device-finn-1')).find((s) => s.title === 'Hey Ya!');
+  assert.deepStrictEqual([hey.count, hey.mine], [2, true]);
+  const dash = (await (await admin('/api/songs')).json()).find((s) => s.title === 'Hey Ya!');
+  assert.deepStrictEqual([dash.count, dash.requestedBy], [2, ['Eve', 'Finn']]);
+
+  // Re-requesting a song you already asked for doesn't count twice.
+  const again = await (await post({ songs: [{ artist: 'outkast', title: 'hey ya' }], name: 'Finn', voter: 'device-finn-1' })).json();
+  assert.deepStrictEqual([again.added, again.alreadyHad], [0, 1]);
+
+  // Taking the 👍 back.
+  assert.strictEqual((await (await vote({ key: hey.key, voter: 'device-finn-1', remove: true })).json()).count, 1);
+  assert.strictEqual((await publicSongs()).find((s) => s.title === 'Hey Ya!').count, 1);
+  assert.strictEqual((await vote({ key: 'nope|nope', voter: 'device-finn-1', name: 'Finn' })).status, 404);
+});
+
+test('guest names are stored in Greeklish', async () => {
+  await post({ songs: [{ artist: 'Vegas', title: 'Ki Ego Gia Sena' }], name: 'Στέργιος', voter: 'device-greek-1' });
+  const key = (await publicSongs()).find((s) => s.title === 'Ki Ego Gia Sena').key;
+  await vote({ key, voter: 'device-greek-2', name: 'Άγγελος 🎉' });
+  const song = (await (await admin('/api/songs')).json()).find((s) => s.title === 'Ki Ego Gia Sena');
+  assert.deepStrictEqual(song.requestedBy, ['Stergios', 'Aggelos']);
+  assert.strictEqual((await vote({ key, voter: 'device-greek-3', name: '🎉🎉' })).status, 400);
+});

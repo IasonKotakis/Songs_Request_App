@@ -4,6 +4,8 @@
 //
 // A store is any object with: list() -> entries oldest first, add(entry), remove(id) -> boolean.
 
+import { toGreeklish } from '../public/greeklish.js';
+
 const normalize = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 
 function clean(value, max) {
@@ -52,13 +54,23 @@ function cleanTrack(t) {
   };
 }
 
+// Requests for the same song (same artist + title, ignoring case/punctuation) share a key.
+// The guest page computes the same key to spot songs that were already requested.
+export const songKey = (artist, title) => normalize(artist) + '|' + normalize(title);
+
+// Guest names are kept in Greeklish (Latin letters), e.g. "Στέργιος" → "Stergios".
+const cleanName = (value) => toGreeklish(clean(value, 60)).replace(/[^A-Za-z .'-]/g, '').replace(/\s+/g, ' ').trim();
+
+// A guest's device id (random, kept on their phone), used so each guest counts once per song.
+const cleanVoter = (v) => (typeof v === 'string' && /^[\w-]{8,64}$/.test(v) ? v : '');
+
 // Group duplicate requests (same artist + title, ignoring case/punctuation).
 export function groupSongs(requests) {
   const groups = new Map();
   for (const r of requests) {
-    const key = normalize(r.artist) + '|' + normalize(r.title);
+    const key = songKey(r.artist, r.title);
     if (!groups.has(key)) {
-      groups.set(key, { artist: r.artist, title: r.title, track: null, ids: [], count: 0, requestedBy: [], notes: [], firstAt: r.createdAt });
+      groups.set(key, { key, artist: r.artist, title: r.title, track: null, ids: [], count: 0, requestedBy: [], notes: [], firstAt: r.createdAt });
     }
     const g = groups.get(key);
     // Show the explicit version when people asked for both.
@@ -164,9 +176,10 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       const songs = Array.isArray(body.songs) ? body.songs : [body];
       if (songs.length === 0) return json({ error: 'Add at least one song.' }, 400);
       if (songs.length > MAX_SONGS_PER_SEND) return json({ error: `You can send up to ${MAX_SONGS_PER_SEND} songs at a time.` }, 400);
-      const name = clean(body.name, 60);
+      const name = cleanName(body.name);
       const note = clean(body.note, 200);
-      const entries = songs.map((song) => {
+      const voter = cleanVoter(body.voter);
+      let entries = songs.map((song) => {
         const track = cleanTrack(song?.track);
         return {
           id: crypto.randomUUID(),
@@ -175,17 +188,75 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
           track,
           name,
           note,
+          voter,
           createdAt: new Date().toISOString(),
         };
       });
       if (entries.some((e) => !e.artist || !e.title)) {
         return json({ error: 'Every song needs both an artist and a title.' }, 400);
       }
+      // Each guest counts once per song: skip songs this device already asked for.
+      let alreadyHad = 0;
+      if (voter) {
+        const mine = new Set((await store.list()).filter((r) => r.voter === voter).map((r) => songKey(r.artist, r.title)));
+        entries = entries.filter((e) => {
+          const key = songKey(e.artist, e.title);
+          if (mine.has(key)) { alreadyHad++; return false; }
+          mine.add(key);
+          return true;
+        });
+      }
       if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000, entries.length)) {
         return json({ error: 'Whoa, that is a lot of songs! Try again later.' }, 429);
       }
       for (const entry of entries) await store.add(entry);
-      return json({ ok: true, added: entries.length }, 201);
+      return json({ ok: true, added: entries.length, alreadyHad }, 201);
+    }
+
+    // What's been requested so far, for guests: counts only, no names or notes.
+    if (method === 'GET' && pathname === '/api/public/songs') {
+      const voter = cleanVoter(url.searchParams.get('voter'));
+      const requests = await store.list();
+      const mine = new Set(requests.filter((r) => voter && r.voter === voter).map((r) => songKey(r.artist, r.title)));
+      return json(groupSongs(requests).map((s) => ({
+        key: s.key,
+        artist: s.artist,
+        title: s.title,
+        count: s.count,
+        mine: mine.has(s.key),
+        track: s.track && {
+          source: s.track.source, id: s.track.id, album: s.track.album, artwork: s.track.artwork,
+          explicit: s.track.explicit, clean: s.track.clean, genre: s.track.genre, previewUrl: s.track.previewUrl,
+        },
+      })));
+    }
+
+    // 👍 on a song someone already requested (or take your 👍 back): { key, voter, name, remove }.
+    if (method === 'POST' && pathname === '/api/votes') {
+      let body;
+      try {
+        body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}');
+      } catch {
+        return json({ error: 'Invalid JSON' }, 400);
+      }
+      const voter = cleanVoter(body.voter);
+      if (!voter) return json({ error: 'Missing device id.' }, 400);
+      const requests = await store.list();
+      const song = groupSongs(requests).find((s) => s.key === body.key);
+      if (!song) return json({ error: 'That song is no longer on the list.' }, 404);
+      const mine = requests.filter((r) => r.voter === voter && songKey(r.artist, r.title) === song.key);
+      if (body.remove) {
+        for (const r of mine) await store.remove(r.id);
+        return json({ ok: true, count: song.count - mine.length });
+      }
+      if (mine.length) return json({ ok: true, count: song.count, already: true });
+      const name = cleanName(body.name);
+      if (!name) return json({ error: 'Please add your name first (in Latin letters, e.g. Stergios).' }, 400);
+      if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {
+        return json({ error: 'Whoa, that is a lot of songs! Try again later.' }, 429);
+      }
+      await store.add({ id: crypto.randomUUID(), artist: song.artist, title: song.title, track: song.track, name, note: '', voter, createdAt: new Date().toISOString() });
+      return json({ ok: true, count: song.count + 1 }, 201);
     }
 
     // Everything below is admin-only.

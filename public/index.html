@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Song Requests</title>
+  <script type="module">
+    import { toGreeklish, isLatinName } from '/greeklish.js';
+    window.greeklish = { toGreeklish, isLatinName };
+  </script>
   <script>
     // Pick the theme before the page draws: the guest's saved choice, else their phone's setting.
     (function () {
@@ -47,7 +51,21 @@
     h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
     p.sub { color: var(--muted); margin: 0 0 24px; }
     main { padding-top: 56px; }
-    form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+    section.card { margin-top: 18px; }
+    section.card h2 { font-size: 1.1rem; margin: 0 0 4px; }
+    #reqFilter { margin: 10px 0 0; padding: 9px 12px; font-size: .95rem; }
+    #requested { max-height: 480px; overflow-y: auto; }
+    #requested:empty { display: none; }
+    .vote { flex: none; display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 12px; border-radius: 19px; border: 1px solid var(--line);
+      background: transparent; color: var(--text); font-size: .95rem; cursor: pointer; }
+    .vote b { font-weight: 700; }
+    .vote.voted { background: var(--accent2); border-color: var(--accent2); color: #fff; }
+    .req { color: var(--accent); font-weight: 600; }
+    .ask { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; width: 100%; font-size: .9rem; }
+    .ask b { flex: 1 1 100%; }
+    #reqMsg { min-height: 1.2em; }
+    .hint.err { color: var(--err); }
+    form, section.card { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
     label, .label { display: block; font-size: .85rem; font-weight: 600; margin: 18px 0 6px; color: var(--muted); }
     label:first-child { margin-top: 0; }
     input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--text); font-size: 1rem; }
@@ -105,6 +123,9 @@
   </div>
 
   <form id="f" autocomplete="off" novalidate>
+    <label for="name">Your name</label>
+    <input id="name" maxlength="60" placeholder="In Latin letters, e.g. Stergios" autocomplete="given-name">
+
     <label for="q">Search for a song</label>
     <div class="search">
       <input id="q" type="search" placeholder="Song or artist, e.g. One More Time" enterkeyhint="search"
@@ -126,9 +147,6 @@
     <ul id="mine" class="songs" hidden></ul>
     <div id="emptyList" class="empty">Your list is empty. Search above and tap + to add songs.</div>
 
-    <label for="name">Your name <span class="opt">(optional)</span></label>
-    <input id="name" maxlength="60" placeholder="So the DJ can shout you out">
-
     <label for="note">Note for the DJ <span class="opt">(optional)</span></label>
     <textarea id="note" maxlength="200" placeholder="Remixes, versions, the perfect moment to play them…"></textarea>
 
@@ -138,6 +156,16 @@
     <div id="msg" role="status"></div>
   </form>
   <p class="count" id="count"></p>
+
+  <!-- Everything requested so far: guests can 👍 instead of requesting a song again. -->
+  <section class="card" id="requestedBox" hidden>
+    <h2>Already requested <span id="reqCount" class="opt"></span></h2>
+    <p class="hint">Want to hear one of these too? Tap 👍. Most-wanted songs are on top.</p>
+    <input id="reqFilter" type="search" placeholder="Filter by song or artist" aria-label="Filter requested songs">
+    <ul id="requested" class="songs"></ul>
+    <p id="reqNone" class="hint" hidden>No requested song matches that.</p>
+    <div id="reqMsg" class="hint" role="status"></div>
+  </section>
 </main>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -181,18 +209,29 @@
     // otherwise there would be no button left to stop it with.
     if (playingUrl && !visible) player.pause();
   }
-  function togglePreview(url) {
+  async function togglePreview(url, deezerId) {
     if (playingUrl === url) { player.pause(); return; }
     playingUrl = url;
-    player.src = url;
-    player.play().catch(() => { playingUrl = ''; syncPlayButtons(); });
     syncPlayButtons();
+    let src = url;
+    if (deezerId) {
+      // Songs on the "Already requested" list were saved a while ago and Deezer's preview links
+      // expire, so fetch a fresh one.
+      const { deezerApi = 'https://api.deezer.com' } = await config;
+      src = await jsonp(`${deezerApi}/track/${encodeURIComponent(deezerId)}?output=jsonp`).then((d) => d?.preview || url).catch(() => url);
+      if (playingUrl !== url) return; // another ▶ was pressed meanwhile
+    }
+    player.src = src;
+    player.play().catch(() => { playingUrl = ''; syncPlayButtons(); });
   }
   player.addEventListener('pause', () => { playingUrl = ''; syncPlayButtons(); });
   player.addEventListener('ended', () => { playingUrl = ''; syncPlayButtons(); });
   const cover = (t) => t?.artwork ? `<img class="art" src="${esc(t.artwork)}" alt="" loading="lazy">` : '<div class="art" aria-hidden="true">♪</div>';
-  const playButton = (t) => t?.previewUrl
-    ? `<button type="button" class="icon" data-preview="${esc(t.previewUrl)}" aria-label="Play preview">▶</button>` : '';
+  const playButton = (t, fresh) => {
+    const deezer = fresh && t?.source === 'deezer' && t.id;
+    if (!t?.previewUrl && !deezer) return '';
+    return `<button type="button" class="icon" data-preview="${esc(t.previewUrl || 'deezer:' + t.id)}"${deezer ? ` data-deezer="${esc(t.id)}"` : ''} aria-label="Play preview">▶</button>`;
+  };
 
   // ---------- song search, straight from the guest's phone (free, no account or key) ----------
   // Deezer first: its results include explicit versions and 30-second previews.
@@ -299,9 +338,16 @@
     if (!tracks.length) return showInfo('No songs found. Try different words, or', true);
     results.innerHTML = tracks.map((t, i) => {
       const added = inList(trackKey(t));
+      const req = requestedByKey.get(serverKey(t.artist, t.title));
+      if (req && askVoteKey === req.key) {
+        return `<li class="active"><div class="ask"><b>"${esc(t.title)}" was already requested by ${req.count} ${req.count === 1 ? 'person' : 'people'}.</b>
+          <button type="button" class="small" data-vote-now="${esc(req.key)}">👍 Upvote it</button>
+          <button type="button" class="link" data-vote-cancel>Cancel</button></div></li>`;
+      }
+      const reqNote = req ? ` · <span class="req">${req.mine ? '✓ you asked' : '👍 ' + req.count + ' requested'}</span>` : '';
       return `<li role="option" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${added}">
         ${cover(t)}
-        <div class="meta"><b>${esc(t.title)}${badge(t)}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
+        <div class="meta"><b>${esc(t.title)}${badge(t)}</b><span>${esc(t.artist)}${reqNote || (t.album ? ' · ' + esc(t.album) : '')}</span></div>
         ${playButton(t)}
         <span class="icon ${added ? 'added' : 'add'}" aria-hidden="true">${added ? '✓' : '+'}</span>
       </li>`;
@@ -314,7 +360,10 @@
   // Tapping a result adds it to the list, tapping it again takes it out.
   function toggleTrack(t) {
     const key = trackKey(t);
+    const req = requestedByKey.get(serverKey(t.artist, t.title));
     if (inList(key)) removeFromList(key);
+    else if (req?.mine) { msg.className = 'ok'; msg.textContent = `You already asked for "${t.title}" 👍`; }
+    else if (req) askVoteKey = req.key;           // already requested by someone else: offer a 👍 instead
     else addToList({ key, track: t });
     renderResults();
   }
@@ -374,7 +423,12 @@
 
   document.addEventListener('click', (e) => {
     const preview = e.target.closest('[data-preview]');
-    if (preview) return togglePreview(preview.dataset.preview);
+    if (preview) return togglePreview(preview.dataset.preview, preview.dataset.deezer);
+    const voteNow = e.target.closest('[data-vote-now]');
+    if (voteNow) { askVoteKey = null; return vote(voteNow.dataset.voteNow, msg).then(renderResults); }
+    if (e.target.closest('[data-vote-cancel]')) { askVoteKey = null; return renderResults(); }
+    const voteBtn = e.target.closest('[data-vote]');
+    if (voteBtn) return vote(voteBtn.dataset.vote, $('reqMsg'));
     if (e.target.closest('[data-manual]')) return openManual();
     const remove = e.target.closest('[data-remove]');
     if (remove) { removeFromList(remove.dataset.remove); if (!results.hidden && tracks.length) renderResults(); return; }
@@ -400,7 +454,12 @@
       msg.className = 'err'; msg.textContent = 'Please fill in both artist and song title.';
       return false;
     }
-    addToList({ key: keyOf({ artist, title }), artist, title });
+    const req = requestedByKey.get(serverKey(artist, title));
+    if (req && !req.mine && confirm(`"${title}" was already requested by ${req.count} ${req.count === 1 ? 'person' : 'people'}. Upvote it instead?`)) {
+      vote(req.key, msg);
+    } else if (!req?.mine) {
+      addToList({ key: keyOf({ artist, title }), artist, title });
+    }
     closeManual();
     return true;
   }
@@ -413,6 +472,7 @@
     e.preventDefault();
     // A typed-in song they forgot to add counts too.
     if (!$('manualBox').hidden && ($('artist').value.trim() || $('title').value.trim()) && !addManual()) return;
+    if (!checkedName(msg)) return;
     if (!myList.length) {
       msg.className = 'err'; msg.textContent = 'Add at least one song to your list first.';
       return;
@@ -422,7 +482,7 @@
     $('btn').disabled = true;
     await Promise.race([pending, new Promise((r) => setTimeout(r, 3000))]);
     const songs = myList.map((s) => (s.track ? { track: s.track } : { artist: s.artist, title: s.title }));
-    const data = { songs, name: $('name').value, note: $('note').value, website: $('website').value };
+    const data = { songs, name: $('name').value.trim(), note: $('note').value, website: $('website').value, voter: voterId };
     $('btn').disabled = true;
     msg.className = ''; msg.textContent = '';
     try {
@@ -431,12 +491,14 @@
       if (!res.ok) throw new Error(body.error || 'Something went wrong.');
       try { localStorage.setItem('guestName', data.name || ''); } catch {}
       player.pause();
-      sentTotal += songs.length;
+      sentTotal += body.added;
       msg.className = 'ok';
-      msg.textContent = `✅ ${songs.length} song${songs.length === 1 ? '' : 's'} sent to the DJ! You can add more anytime.`;
+      msg.textContent = `✅ ${body.added} song${body.added === 1 ? '' : 's'} sent to the DJ!` +
+        (body.alreadyHad ? ` (${body.alreadyHad} you had already asked for.)` : '') + ' You can add more anytime.';
       $('count').textContent = `You've requested ${sentTotal} song${sentTotal === 1 ? '' : 's'} so far.`;
       myList = []; saveList(); renderList();
       q.value = ''; $('note').value = ''; tracks = []; closeResults();
+      loadRequested();
     } catch (err) {
       msg.className = 'err';
       msg.textContent = err.message;
@@ -444,6 +506,95 @@
       $('btn').disabled = false;
     }
   });
+
+  // Names are kept in Greeklish: Greek letters are converted ("Στέργιος" → "Stergios").
+  // Returns the name, or '' after showing a message in `out` if it can't be used.
+  function checkedName(out) {
+    const g = window.greeklish;
+    const name = (g ? g.toGreeklish($('name').value) : $('name').value).replace(/\s+/g, ' ').trim();
+    $('name').value = name;
+    const problem = !name ? 'Add your name at the top first.'
+      : g && !g.isLatinName(name) ? 'Please write your name in Latin letters, e.g. Stergios.' : '';
+    if (problem) {
+      out.className = out === msg ? 'err' : 'hint err';
+      out.textContent = problem;
+      $('name').focus(); $('name').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return '';
+    }
+    return name;
+  }
+  $('name').addEventListener('blur', () => {
+    if (window.greeklish) $('name').value = window.greeklish.toGreeklish($('name').value).trim();
+  });
+
+  // ---------- already requested: see what's on the list, 👍 instead of requesting again ----------
+  // A random id kept on this phone, so each guest counts once per song.
+  let voterId = '';
+  try { voterId = localStorage.getItem('voterId') || ''; } catch {}
+  if (!/^[\w-]{8,64}$/.test(voterId)) {
+    voterId = (crypto.randomUUID ? crypto.randomUUID() : 'v' + Math.random().toString(36).slice(2) + Date.now().toString(36));
+    try { localStorage.setItem('voterId', voterId); } catch {}
+  }
+  // Same key the server uses for "the same song" (artist + title, ignoring case and punctuation).
+  const normalizeKey = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+  const serverKey = (artist, title) => normalizeKey(artist) + '|' + normalizeKey(title);
+  let requested = [];
+  let requestedByKey = new Map();
+  let askVoteKey = null;   // search result currently showing "already requested, upvote?"
+
+  async function loadRequested() {
+    try {
+      requested = await fetch('/api/public/songs?voter=' + encodeURIComponent(voterId)).then((r) => r.json());
+    } catch { return; }
+    requestedByKey = new Map(requested.map((s) => [s.key, s]));
+    renderRequested();
+    if (!results.hidden && tracks.length) renderResults();
+  }
+
+  function renderRequested() {
+    $('requestedBox').hidden = requested.length === 0;
+    $('reqCount').textContent = requested.length ? `(${requested.length})` : '';
+    const words = normalizeKey($('reqFilter').value).split(' ').filter(Boolean);
+    const shown = requested.filter((s) => {
+      const text = normalizeKey(`${s.artist} ${s.title}`);
+      return words.every((w) => text.includes(w));
+    });
+    $('reqNone').hidden = shown.length > 0 || !requested.length;
+    $('requested').innerHTML = shown.map((s) => `<li>
+        ${cover(s.track)}
+        <div class="meta"><b>${esc(s.title)}${badge(s.track)}</b><span>${esc(s.artist)}${s.track?.genre ? ' · ' + esc(s.track.genre) : ''}</span></div>
+        ${playButton(s.track, true)}
+        <button type="button" class="vote ${s.mine ? 'voted' : ''}" data-vote="${esc(s.key)}"
+          aria-label="${s.mine ? 'Take back your vote' : 'Upvote'} (${s.count} so far)">👍 <b>${s.count}</b></button>
+      </li>`).join('');
+    syncPlayButtons();
+  }
+
+  // 👍 a song (or take your 👍 back if you already gave one). Messages go to `out`.
+  async function vote(key, out) {
+    const song = requestedByKey.get(key);
+    if (!song) return;
+    const name = song.mine ? $('name').value.trim() : checkedName(out);
+    if (!song.mine && !name) return;
+    try {
+      const res = await fetch('/api/votes', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, voter: voterId, name, remove: song.mine }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || 'Something went wrong.');
+      try { localStorage.setItem('guestName', name); } catch {}
+      out.className = out === msg ? 'ok' : 'hint';
+      out.textContent = song.mine ? `Took back your 👍 for "${song.title}".` : `👍 Added your vote for "${song.title}"!`;
+    } catch (err) {
+      out.className = out === msg ? 'err' : 'hint err';
+      out.textContent = err.message;
+    }
+    await loadRequested();
+  }
+
+  $('reqFilter').addEventListener('input', renderRequested);
+  loadRequested();
+  setInterval(() => { if (!document.hidden) loadRequested(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRequested(); });
 
   // ---------- light / dark switch ----------
   function showTheme() {

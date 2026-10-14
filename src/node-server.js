@@ -25,7 +25,7 @@ function fileStore() {
     fs.renameSync(DATA_FILE + '.tmp', DATA_FILE);
   };
   return {
-    list: async () => requests.map((r) => ({ ...r, track: r.track || null })),
+    list: async () => requests.map((r) => ({ ...r, track: r.track || null, voter: r.voter || '' })),
     add: async (entry) => {
       requests.push(entry);
       save();
@@ -57,6 +57,7 @@ const STATIC = {
   '/admin': ['admin.html', 'text/html; charset=utf-8'],
   '/admin.html': ['admin.html', 'text/html; charset=utf-8'],
   '/vendor/qrcode.js': ['vendor/qrcode.js', 'text/javascript; charset=utf-8'],
+  '/greeklish.js': ['greeklish.js', 'text/javascript; charset=utf-8'],
   '/background.jpg': ['background.jpg', 'image/jpeg'], // the party photo, optional
   '/background-dark.jpg': ['background-dark.jpg', 'image/jpeg'], // its dark-mode version
 };
