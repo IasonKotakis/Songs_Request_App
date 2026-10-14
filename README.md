@@ -26,6 +26,15 @@ Song search uses [Deezer's](https://developers.deezer.com/api) free public catal
 
 A window opens showing the app's addresses, and your browser opens the DJ dashboard (password `changeme`). Keep that window open while testing; closing it stops the app.
 
+**Skip re-downloading after every change (Windows):** install [Git for Windows](https://git-scm.com/download/win) (default options are fine), open PowerShell and run once:
+
+```
+cd $HOME\Documents
+git clone https://github.com/IasonKotakis/Songs_Request_App.git
+```
+
+From then on, double-click `start-windows.bat` in `Documents\Songs_Request_App`. It fetches the latest version each time before starting.
+
 **To test the QR code with your phone:** put the phone on the same Wi-Fi. The window prints a line like `http://192.168.1.23:3000/admin`. Open *that* address on your computer (not `localhost`), and scan the QR code shown there. If the phone can't load the page, allow Node.js through the Windows firewall when it asks.
 
 **Getting `ENOENT` / error `-4058` from npm?** The terminal isn't in the app's folder. Unzipping on Windows often creates a folder inside a folder with the same name; go into the inner one, where `package.json` is. Or just use `start-windows.bat`.

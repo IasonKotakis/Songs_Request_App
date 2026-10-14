@@ -25,6 +25,17 @@ if not exist "server.js" (
   exit /b 1
 )
 
+rem If this folder was set up with git, fetch the latest version first.
+if exist ".git" (
+  where git >nul 2>nul
+  if not errorlevel 1 (
+    echo   Checking for updates...
+    git pull --ff-only
+    if errorlevel 1 echo   Could not update, starting the version you already have.
+    echo.
+  )
+)
+
 rem Open the dashboard in the browser a few seconds after the app starts.
 start "" /min cmd /c "ping -n 4 127.0.0.1 >nul & start http://localhost:3000/admin"
 
