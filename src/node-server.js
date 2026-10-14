@@ -46,6 +46,7 @@ const app = createApp({
   eventName: process.env.EVENT_NAME,
   musicCountry: process.env.MUSIC_COUNTRY,
   musicApi: process.env.MUSIC_API,
+  deezerApi: process.env.DEEZER_API,
   maxPerGuestPerHour: Number(process.env.MAX_PER_GUEST_PER_HOUR) || undefined,
 });
 

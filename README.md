@@ -3,18 +3,18 @@
 A tiny app that lets guests scan a QR code and drop in song requests before (and during) the party.
 The DJ gets a dashboard where they can see every request and export the list to build a playlist.
 
-- **Guest page** (`/`): a mobile-friendly page. Guests search for songs and see a dropdown with album art, similar to Spotify's search. They tap ▶ to hear a ~30-second preview, so they know they've got the right song, and tap + to add it to their list. They can keep searching and adding, then send the whole list with one button. When a song has both versions, the explicit one is listed first, marked **E**, with the **Clean** one right under it. (Since late 2025 Apple's search has been leaving explicit versions out of its US results, so when only a clean version comes back the page looks the song up in the UK catalog, which still has them.) Songs missing from the catalog can be typed in by hand. An unsent list is kept if they close the page. Name and a note for the DJ are optional.
+- **Guest page** (`/`): a mobile-friendly page. Guests search for songs and see a dropdown with album art, similar to Spotify's search. They tap ▶ to hear a ~30-second preview, so they know they've got the right song, and tap + to add it to their list. They can keep searching and adding, then send the whole list with one button. When a song has both versions, the explicit one is listed first, marked **E**, with the **Clean** one right under it. Songs missing from the catalog can be typed in by hand. An unsent list is kept if they close the page. Name and a note for the DJ are optional.
 - **DJ dashboard** (`/admin`, protected by a password):
   - the QR code for the guest page, plus the plain link, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first
-  - album art, album name and a ▶ 30-second preview for each song, plus a direct **Apple Music** link for songs picked from search
+  - album art, album name and a ▶ 30-second preview for each song, plus a direct **Deezer** link for songs picked from search
   - songs that were typed in by hand are marked **typed**, so you know to double-check them
   - one-click Spotify / YouTube / Beatport search links for each song
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
   - **Export .csv**: a spreadsheet with votes, who asked, album, length, notes and links.
   - delete spam or joke requests
 
-Song search uses Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api), which needs no account or key. Each guest's phone searches Apple directly, so a busy party never hits Apple's per-address limit. Picked songs are stored with their official catalog names, which makes the `.txt` export match much better when you import it into a playlist.
+Song search uses [Deezer's](https://developers.deezer.com/api) free public catalog, which needs no account or key and includes explicit versions and 30-second previews. If Deezer can't be reached, it falls back to Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api). (Apple's search is only the backup because since late 2025 it has been leaving explicit versions out of its results.) Each guest's phone searches directly, so a busy party never hits a per-address limit. Picked songs are stored with their official catalog names, which makes the `.txt` export match much better when you import it into a playlist.
 
 ## Try it on your computer first
 
@@ -39,7 +39,7 @@ One-time setup, in a terminal in this folder:
 1. `npm install`: installs Cloudflare's `wrangler` tool.
 2. `npm run cf:login`: opens your browser to log in to (or sign up for) a free Cloudflare account.
 3. `npm run cf:create-db`: creates the database and prints a `database_id`. Copy it into `wrangler.jsonc`, replacing the `00000000-…` placeholder.
-4. In `wrangler.jsonc`, set `EVENT_NAME` to your party's name. Optionally set `MUSIC_COUNTRY` (e.g. `GR`, `GB`) so the search shows your country's catalog.
+4. In `wrangler.jsonc`, set `EVENT_NAME` to your party's name. Optionally set `MUSIC_COUNTRY` (e.g. `GR`, `GB`), the country for the backup Apple search.
 5. `npm run cf:migrate`: creates the table in the database.
 6. `npm run cf:deploy`: puts the app online and prints its address.
 7. `npm run cf:password`: sets your dashboard password (it asks you to type it). Until you do this the site shows an error, which is on purpose.
@@ -58,7 +58,7 @@ To change something later (e.g. the party name), edit `wrangler.jsonc` and run `
 | --- | --- | --- |
 | `ADMIN_KEY` | `changeme` locally; must be set on Cloudflare | Password for the DJ dashboard and exports |
 | `EVENT_NAME` | `The Party` | Shown on the pages |
-| `MUSIC_COUNTRY` | `US` | Which country's music catalog to search (two-letter code) |
+| `MUSIC_COUNTRY` | `US` | Country catalog for the backup Apple search (two-letter code). Deezer uses the guest's own country automatically. |
 | `MAX_PER_GUEST_PER_HOUR` | `60` | Basic spam limit: songs per hour from one IP address |
 | `PORT`, `DATA_DIR` | `3000`, `./data` | Node version only: port, and where `requests.json` is saved |
 

@@ -20,25 +20,34 @@ function safeUrl(value, hostPattern) {
   }
 }
 
-// A song the guest picked from Apple's catalog search (done in their browser).
-// Only keep fields we understand, and only links that point at Apple.
+// Where each catalog's links may point.
+const HOSTS = {
+  deezer: { artwork: /(^|\.)dzcdn\.net$/, url: /^(www\.)?deezer\.com$/, preview: /(^|\.)dzcdn\.net$/ },
+  apple: { artwork: /(^|\.)mzstatic\.com$/, url: /^(music|itunes)\.apple\.com$/, preview: /(^|\.)apple\.com$/ },
+};
+
+// A song the guest picked from catalog search (done in their browser, on Deezer or Apple).
+// Only keep fields we understand, and only links that point at that catalog.
 function cleanTrack(t) {
   if (!t || typeof t !== 'object' || !/^\d{1,15}$/.test(String(t.id))) return null;
   const artist = clean(t.artist, 120);
   const title = clean(t.title, 160);
   if (!artist || !title) return null;
   const durationMs = Number(t.durationMs);
+  const source = t.source === 'deezer' ? 'deezer' : 'apple';
+  const hosts = HOSTS[source];
   return {
+    source,
     id: String(t.id),
     artist,
     title,
     album: clean(t.album, 160),
-    artwork: safeUrl(t.artwork, /(^|\.)mzstatic\.com$/),
+    artwork: safeUrl(t.artwork, hosts.artwork),
     durationMs: Number.isFinite(durationMs) && durationMs > 0 ? Math.min(Math.round(durationMs), 3_600_000) : 0,
     explicit: t.explicit === true,
     clean: t.explicit !== true && t.clean === true,
-    url: safeUrl(t.url, /^(music|itunes)\.apple\.com$/),
-    previewUrl: safeUrl(t.previewUrl, /(^|\.)apple\.com$/), // ~30s clip, e.g. audio-ssl.itunes.apple.com
+    url: safeUrl(t.url, hosts.url),
+    previewUrl: safeUrl(t.previewUrl, hosts.preview), // ~30s clip
   };
 }
 
@@ -62,7 +71,7 @@ export function groupSongs(requests) {
 
 const searchQuery = (s) => encodeURIComponent(`${s.artist} ${s.title}`);
 const links = (s) => ({
-  appleMusic: s.track?.url || '',
+  listen: s.track?.url || '', // the song on Deezer or Apple Music
   spotify: `https://open.spotify.com/search/${searchQuery(s)}`,
   youtube: `https://www.youtube.com/results?search_query=${searchQuery(s)}`,
   beatport: `https://www.beatport.com/search?q=${searchQuery(s)}`,
@@ -81,11 +90,11 @@ function formatDuration(ms) {
 }
 
 export function toCsv(songs) {
-  const rows = [['Artist', 'Title', 'Album', 'Length', 'Times requested', 'Requested by', 'Notes', 'Found in catalog', 'Apple Music', 'Spotify search', 'YouTube search', 'Beatport search']];
+  const rows = [['Artist', 'Title', 'Album', 'Length', 'Times requested', 'Requested by', 'Notes', 'Found in catalog', 'Song link', 'Spotify search', 'YouTube search', 'Beatport search']];
   for (const s of songs) {
     const l = links(s);
     const t = s.track || {};
-    rows.push([s.artist, s.title, t.album, formatDuration(t.durationMs), s.count, s.requestedBy.join('; '), s.notes.join(' | '), s.track ? 'yes' : 'no (typed manually)', l.appleMusic, l.spotify, l.youtube, l.beatport]);
+    rows.push([s.artist, s.title, t.album, formatDuration(t.durationMs), s.count, s.requestedBy.join('; '), s.notes.join(' | '), s.track ? (s.track.source === 'deezer' ? 'Deezer' : 'Apple Music') : 'no (typed manually)', l.listen, l.spotify, l.youtube, l.beatport]);
   }
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
@@ -122,9 +131,9 @@ const text = (body, type, headers = {}) => new Response(body, { headers: { 'Cont
 const MAX_SONGS_PER_SEND = 30;
 const MAX_BODY = 64_000;
 
-export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', maxPerGuestPerHour = 60 }) {
+export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', deezerApi = 'https://api.deezer.com', maxPerGuestPerHour = 60 }) {
   const submitBuckets = new Map();
-  const config = { eventName, musicCountry, musicApi };
+  const config = { eventName, musicCountry, musicApi, deezerApi };
 
   return async function handle(request, ip = '') {
     const url = new URL(request.url);

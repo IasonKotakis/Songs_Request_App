@@ -44,6 +44,7 @@ export default {
       eventName: env.EVENT_NAME,
       musicCountry: env.MUSIC_COUNTRY,
       musicApi: env.MUSIC_API,
+      deezerApi: env.DEEZER_API,
       maxPerGuestPerHour: Number(env.MAX_PER_GUEST_PER_HOUR) || undefined,
     });
     return app(request, request.headers.get('CF-Connecting-IP') || '');

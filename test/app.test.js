@@ -21,7 +21,7 @@ const admin = (p, opts = {}) => fetch(base + p, { ...opts, headers: { Authorizat
 
 // What the guest page sends after picking a song from Apple's search.
 const pickedTrack = {
-  id: '697195787', artist: 'Daft Punk', title: 'One More Time', album: 'Discovery',
+  source: 'apple', id: '697195787', artist: 'Daft Punk', title: 'One More Time', album: 'Discovery',
   artwork: 'https://is1-ssl.mzstatic.com/image/thumb/a/120x120bb.jpg', durationMs: 320357, explicit: false,
   url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
   previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview/a/b.m4a',
@@ -80,7 +80,7 @@ test('a picked song keeps its catalog details and merges with typed-in requests'
 
   const daft = (await (await admin('/api/songs')).json()).find((s) => s.artist === 'Daft Punk');
   assert.strictEqual(daft.count, 3);
-  assert.strictEqual(daft.links.appleMusic, pickedTrack.url);
+  assert.strictEqual(daft.links.listen, pickedTrack.url);
   assert.match(await (await admin('/export.csv')).text(), /"Discovery","5:20"/);
 });
 
@@ -131,4 +131,20 @@ test('clean versions are flagged, and the dashboard shows the explicit version w
   const song = (await (await admin('/api/songs')).json()).find((x) => x.title === 'HUMBLE.');
   assert.strictEqual(song.count, 2);
   assert.strictEqual(song.track.id, '2');
+});
+
+test('songs picked from Deezer keep Deezer links; links to other sites are dropped', async () => {
+  const deezer = {
+    source: 'deezer', id: '350171311', artist: 'Kendrick Lamar', title: 'DNA.', album: 'DAMN.',
+    artwork: 'https://cdn-images.dzcdn.net/images/cover/abc/250x250-000000-80-0-0.jpg', durationMs: 177000, explicit: true, clean: false,
+    url: 'https://www.deezer.com/track/350171311', previewUrl: 'https://cdnt-preview.dzcdn.net/api/1/1/a/b/c/0/abc.mp3?hdnea=exp=1',
+  };
+  await post({ songs: [{ track: deezer }, { track: { ...deezer, id: '1', artwork: 'https://mzstatic.com.evil.example/a.jpg', url: 'https://music.apple.com/x' } }] });
+  const [a, b] = (await (await admin('/api/requests')).json()).slice(-2).map((r) => r.track);
+  assert.deepStrictEqual(a, deezer);
+  assert.strictEqual(b.artwork, '');
+  assert.strictEqual(b.url, '');
+  const song = (await (await admin('/api/songs')).json()).find((x) => x.title === 'DNA.');
+  assert.match(await (await admin('/export.csv')).text(), /"Deezer","https:\/\/www\.deezer\.com\/track\/350171311"/);
+  assert.ok(song.track.explicit);
 });

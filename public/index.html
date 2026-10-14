@@ -150,12 +150,14 @@
   const playButton = (t) => t?.previewUrl
     ? `<button type="button" class="icon" data-preview="${esc(t.previewUrl)}" aria-label="Play preview">▶</button>` : '';
 
-  // ---------- Apple's iTunes Search API, queried from the guest's phone (free, no key) ----------
-  // Loaded via JSONP, the method Apple documents for use from web pages.
+  // ---------- song search, straight from the guest's phone (free, no account or key) ----------
+  // Deezer first: its results include explicit versions and 30-second previews.
+  // Apple's iTunes search is the backup (it has been leaving explicit versions out since late 2025).
+  // Both are loaded via JSONP, the method each documents for use from web pages.
   let jsonpSeq = 0;
   function jsonp(src) {
     return new Promise((resolve, reject) => {
-      const cb = '__itunes' + ++jsonpSeq;
+      const cb = '__songs' + ++jsonpSeq;
       const script = document.createElement('script');
       const done = () => { window[cb] = () => {}; script.remove(); clearTimeout(timeout); };
       const timeout = setTimeout(() => { done(); reject(new Error('timeout')); }, 8000);
@@ -166,22 +168,42 @@
     });
   }
 
-  const toTrack = (r) => ({
-    id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
+  const fromDeezer = (d) => ({
+    source: 'deezer', id: String(d.id), artist: d.artist?.name || '', title: d.title || d.title_short || '',
+    album: d.album?.title || '', artwork: d.album?.cover_medium || '', durationMs: (d.duration || 0) * 1000,
+    // explicit_content_lyrics: 1 = explicit, 3 = edited (clean)
+    explicit: d.explicit_lyrics === true || d.explicit_content_lyrics === 1,
+    clean: !d.explicit_lyrics && d.explicit_content_lyrics === 3,
+    url: d.link || '', previewUrl: d.preview || '',
+  });
+  const fromApple = (r) => ({
+    source: 'apple', id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
     artwork: (r.artworkUrl100 || '').replace('100x100bb', '120x120bb'), durationMs: r.trackTimeMillis || 0,
     explicit: r.trackExplicitness === 'explicit', clean: r.trackExplicitness === 'cleaned',
     url: r.trackViewUrl || '', previewUrl: r.previewUrl || '',
   });
 
-  // Apple often lists a song's clean version first, or several copies from different albums.
-  // Show each song once, explicit version first with the clean version right under it.
-  const norm = (s) => s.toLowerCase().replace(/[\(\[](clean|explicit)( version)?[\)\]]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+  async function deezerSearch(term) {
+    const { deezerApi = 'https://api.deezer.com' } = await config;
+    const data = await jsonp(`${deezerApi}/search?q=${encodeURIComponent(term)}&limit=40&output=jsonp`);
+    if (!Array.isArray(data?.data)) throw new Error('Deezer search failed');
+    return data.data.filter((d) => d.type === 'track' && d.id).map(fromDeezer);
+  }
+  async function appleSearch(term) {
+    const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
+    const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=40&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+    return (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(fromApple);
+  }
+
+  // Show each song once: explicit version first with the clean version right under it,
+  // and no repeat copies from other albums.
+  const norm = (s) => s.toLowerCase().replace(/[\(\[](clean|explicit|edited)( version)?[\)\]]/g, '').replace(/[^\p{L}\p{N}]+/gu, '');
+  const songKey = (t) => norm(t.artist) + '|' + norm(t.title);
   function explicitFirst(list) {
     const songs = new Map();
     for (const t of list) {
-      const key = norm(t.artist) + '|' + norm(t.title);
-      if (!songs.has(key)) songs.set(key, []);
-      songs.get(key).push(t);
+      if (!songs.has(songKey(t))) songs.set(songKey(t), []);
+      songs.get(songKey(t)).push(t);
     }
     return [...songs.values()].flatMap((versions) => {
       const explicit = versions.find((t) => t.explicit);
@@ -191,56 +213,21 @@
   }
   const badge = (t) => (t?.explicit ? '<span class="e" title="Explicit">E</span>' : t?.clean ? '<span class="clean">Clean</span>' : '');
 
-  const songKey = (t) => norm(t.artist) + '|' + norm(t.title);
-  const appleSearch = async (term, limit, country) => {
-    const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
-    const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=${limit}&country=${encodeURIComponent(country || musicCountry)}&term=${encodeURIComponent(term)}`);
-    return (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
-  };
-
-  // Since late 2025 Apple's search has been leaving explicit versions out of its US results
-  // (the Apple Music app is not affected). The UK catalog still has them, so look there.
-  const EXPLICIT_COUNTRY = 'GB';
-  async function findExplicit(term, cleanOnly, isStale) {
-    const { musicCountry = 'US' } = await config;
-    const country = musicCountry.toUpperCase() === EXPLICIT_COUNTRY ? 'DE' : EXPLICIT_COUNTRY;
-    const wanted = new Map(cleanOnly.map((t) => [songKey(t), t]));
-    const found = [];
-    const take = (list) => list.forEach((m) => {
-      if (m.explicit && wanted.has(songKey(m))) { found.push(m); wanted.delete(songKey(m)); }
-    });
-    // The guest's own search first (one request), then each song still missing by name.
-    take(await appleSearch(term, 40, country));
-    for (const t of [...wanted.values()].slice(0, 3)) {
-      if (isStale()) break;
-      const songTerm = `${t.artist} ${t.title}`.replace(/[\(\[](clean|edited)( version)?[\)\]]/gi, '').replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
-      take(await appleSearch(songTerm, 25, country));
-    }
-    return found;
-  }
-
   async function search(term) {
     const seq = ++searchSeq;
     try {
-      const first = explicitFirst(await appleSearch(term, 40)).slice(0, 12);
+      const found = await deezerSearch(term).catch(() => appleSearch(term));
       if (seq !== searchSeq) return; // a newer search is on its way
-      tracks = first; active = -1; renderResults();
-
-      const hasExplicit = new Set(tracks.filter((t) => t.explicit).map(songKey));
-      const cleanOnly = tracks.filter((t) => t.clean && !hasExplicit.has(songKey(t))).slice(0, 4);
-      if (!cleanOnly.length) return;
-      const found = await findExplicit(term, cleanOnly, () => seq !== searchSeq).catch(() => []);
-      if (seq !== searchSeq || !found.length) return;
-      tracks = explicitFirst([...tracks, ...found]); // each explicit version lands just above its clean one
-      if (!results.hidden) renderResults();
+      tracks = explicitFirst(found).slice(0, 12);
+      active = -1; renderResults();
     } catch {
       if (seq === searchSeq) showInfo('Search is having a moment. You can still', true);
     }
   }
 
-
   // ---------- search results ----------
-  const keyOf = (s) => s.track ? 't' + s.track.id : 'm' + (s.artist + '|' + s.title).toLowerCase();
+  const trackKey = (t) => (t.source || 'apple') + t.id;
+  const keyOf = (s) => s.track ? trackKey(s.track) : 'm' + (s.artist + '|' + s.title).toLowerCase();
   const inList = (key) => myList.some((s) => s.key === key);
 
   function closeResults() { results.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; }
@@ -252,7 +239,7 @@
   function renderResults() {
     if (!tracks.length) return showInfo('No songs found. Try different words, or', true);
     results.innerHTML = tracks.map((t, i) => {
-      const added = inList('t' + t.id);
+      const added = inList(trackKey(t));
       return `<li role="option" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${added}">
         ${cover(t)}
         <div class="meta"><b>${esc(t.title)}${badge(t)}</b><span>${esc(t.artist)}${t.album ? ' · ' + esc(t.album) : ''}</span></div>
@@ -267,7 +254,7 @@
 
   // Tapping a result adds it to the list, tapping it again takes it out.
   function toggleTrack(t) {
-    const key = 't' + t.id;
+    const key = trackKey(t);
     if (inList(key)) removeFromList(key);
     else addToList({ key, track: t });
     renderResults();

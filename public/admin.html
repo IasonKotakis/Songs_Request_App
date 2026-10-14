@@ -117,7 +117,9 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+  let deezerApi = 'https://api.deezer.com';
   fetch('/api/config').then((r) => r.json()).then((c) => {
+    deezerApi = c.deezerApi || deezerApi;
     document.querySelectorAll('.event-name').forEach((el) => (el.textContent = c.eventName));
     document.title = 'DJ Dashboard · ' + c.eventName;
   }).catch(() => {});
@@ -177,13 +179,13 @@
       $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th></tr>' +
         songs.map((s, i) => `<tr>
           <td>${i + 1}</td><td>${esc(s.artist)}</td>
-          <td><div class="song">${s.track?.previewUrl ? `<button class="play" data-preview="${esc(s.track.previewUrl)}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
+          <td><div class="song">${s.track?.previewUrl || s.track?.source === 'deezer' ? `<button class="play" data-preview="${esc(s.track.previewUrl || 'deezer:' + s.track.id)}" data-deezer="${s.track.source === 'deezer' ? esc(s.track.id) : ''}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
             ${esc(s.title)} ${s.track ? (s.track.explicit ? '<span class="tag">E</span>' : s.track.clean ? '<span class="tag" title="The clean (edited) version was picked">Clean</span>' : '') : '<span class="manual" title="Typed in by hand, not picked from search: double-check it">typed</span>'}
             ${s.track?.album ? `<div class="muted small">${esc(s.track.album)}</div>` : ''}
             ${s.notes.length ? `<div class="muted small">💬 ${s.notes.map(esc).join('<br>💬 ')}</div>` : ''}
           </div></div></td>
           <td><span class="badge">${s.count}</span></td><td class="small">${esc(s.requestedBy.join(', '))}</td>
-          <td class="links">${s.links.appleMusic ? `<a href="${esc(s.links.appleMusic)}" target="_blank" rel="noopener">Apple Music</a>` : ''}<a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
+          <td class="links">${s.links.listen ? `<a href="${esc(s.links.listen)}" target="_blank" rel="noopener">${s.track.source === 'deezer' ? 'Deezer' : 'Apple Music'}</a>` : ''}<a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
         </tr>`).join('');
     } else {
       $('table').innerHTML = '<tr><th>When</th><th>Artist</th><th>Title</th><th>Name</th><th>Note</th><th></th></tr>' +
@@ -206,6 +208,19 @@
   });
   $('tabSongs').addEventListener('click', () => { view = 'songs'; $('tabSongs').classList.add('on'); $('tabAll').classList.remove('on'); load(); });
   $('tabAll').addEventListener('click', () => { view = 'all'; $('tabAll').classList.add('on'); $('tabSongs').classList.remove('on'); load(); });
+  function freshDeezerPreview(id) {
+    return new Promise((resolve, reject) => {
+      const cb = '__deezer' + Date.now();
+      const script = document.createElement('script');
+      const done = () => { window[cb] = () => {}; script.remove(); };
+      window[cb] = (d) => { done(); d?.preview ? resolve(d.preview) : reject(new Error('no preview')); };
+      script.onerror = () => { done(); reject(new Error('network')); };
+      setTimeout(() => { done(); reject(new Error('timeout')); }, 6000);
+      script.src = `${deezerApi}/track/${encodeURIComponent(id)}?output=jsonp&callback=${cb}`;
+      document.head.appendChild(script);
+    });
+  }
+
   // One preview player for the page.
   const player = new Audio();
   let playingUrl = '';
@@ -221,9 +236,13 @@
     const preview = e.target.closest('[data-preview]');
     if (preview) {
       if (playingUrl === preview.dataset.preview) return player.pause();
-      playingUrl = player.src = preview.dataset.preview;
-      player.play().catch(() => { playingUrl = ''; syncPlay(); });
-      return syncPlay();
+      playingUrl = preview.dataset.preview;
+      syncPlay();
+      // Deezer preview links expire after a while, so ask Deezer for a fresh one.
+      const src = preview.dataset.deezer ? await freshDeezerPreview(preview.dataset.deezer).catch(() => playingUrl) : playingUrl;
+      if (playingUrl !== preview.dataset.preview) return; // another ▶ was pressed meanwhile
+      player.src = src;
+      return player.play().catch(() => { playingUrl = ''; syncPlay(); });
     }
     const id = e.target.dataset?.id;
     if (!id || !confirm('Delete this request?')) return;
