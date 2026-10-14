@@ -192,18 +192,31 @@
   const badge = (t) => (t?.explicit ? '<span class="e" title="Explicit">E</span>' : t?.clean ? '<span class="clean">Clean</span>' : '');
 
   const songKey = (t) => norm(t.artist) + '|' + norm(t.title);
-  const appleSearch = async (term, limit) => {
+  const appleSearch = async (term, limit, country) => {
     const { musicApi = 'https://itunes.apple.com', musicCountry = 'US' } = await config;
-    const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=${limit}&country=${encodeURIComponent(musicCountry)}&term=${encodeURIComponent(term)}`);
+    const data = await jsonp(`${musicApi}/search?media=music&entity=song&explicit=Yes&limit=${limit}&country=${encodeURIComponent(country || musicCountry)}&term=${encodeURIComponent(term)}`);
     return (data.results || []).filter((r) => r.kind === 'song' && r.trackId).map(toTrack);
   };
 
-  // For a broad search (e.g. "humble") Apple sometimes returns only a song's clean version.
-  // Search for that exact song ("Kendrick Lamar HUMBLE.") to find its explicit version.
-  async function findExplicit(t) {
-    const term = `${t.artist} ${t.title}`.replace(/[\(\[](clean|edited)( version)?[\)\]]/gi, '').replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
-    const matches = await appleSearch(term, 25);
-    return matches.find((m) => m.explicit && songKey(m) === songKey(t)) || null;
+  // Since late 2025 Apple's search has been leaving explicit versions out of its US results
+  // (the Apple Music app is not affected). The UK catalog still has them, so look there.
+  const EXPLICIT_COUNTRY = 'GB';
+  async function findExplicit(term, cleanOnly, isStale) {
+    const { musicCountry = 'US' } = await config;
+    const country = musicCountry.toUpperCase() === EXPLICIT_COUNTRY ? 'DE' : EXPLICIT_COUNTRY;
+    const wanted = new Map(cleanOnly.map((t) => [songKey(t), t]));
+    const found = [];
+    const take = (list) => list.forEach((m) => {
+      if (m.explicit && wanted.has(songKey(m))) { found.push(m); wanted.delete(songKey(m)); }
+    });
+    // The guest's own search first (one request), then each song still missing by name.
+    take(await appleSearch(term, 40, country));
+    for (const t of [...wanted.values()].slice(0, 3)) {
+      if (isStale()) break;
+      const songTerm = `${t.artist} ${t.title}`.replace(/[\(\[](clean|edited)( version)?[\)\]]/gi, '').replace(/[^\p{L}\p{N}']+/gu, ' ').trim();
+      take(await appleSearch(songTerm, 25, country));
+    }
+    return found;
   }
 
   async function search(term) {
@@ -216,7 +229,7 @@
       const hasExplicit = new Set(tracks.filter((t) => t.explicit).map(songKey));
       const cleanOnly = tracks.filter((t) => t.clean && !hasExplicit.has(songKey(t))).slice(0, 4);
       if (!cleanOnly.length) return;
-      const found = (await Promise.all(cleanOnly.map((t) => findExplicit(t).catch(() => null)))).filter(Boolean);
+      const found = await findExplicit(term, cleanOnly, () => seq !== searchSeq).catch(() => []);
       if (seq !== searchSeq || !found.length) return;
       tracks = explicitFirst([...tracks, ...found]); // each explicit version lands just above its clean one
       if (!results.hidden) renderResults();
