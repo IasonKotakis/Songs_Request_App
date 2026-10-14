@@ -169,12 +169,17 @@
   const player = new Audio();
   let playingUrl = '';
   function syncPlayButtons() {
+    let visible = false;
     document.querySelectorAll('[data-preview]').forEach((b) => {
       const on = b.dataset.preview === playingUrl;
       b.classList.toggle('playing', on);
       b.textContent = on ? '❚❚' : '▶';
       b.setAttribute('aria-label', on ? 'Stop preview' : 'Play preview');
+      if (on && b.offsetParent !== null) visible = true;
     });
+    // The song that's playing is no longer on screen (new search, results closed): stop it,
+    // otherwise there would be no button left to stop it with.
+    if (playingUrl && !visible) player.pause();
   }
   function togglePreview(url) {
     if (playingUrl === url) { player.pause(); return; }
@@ -213,14 +218,28 @@
     // explicit_content_lyrics: 1 = explicit, 3 = edited (clean)
     explicit: d.explicit_lyrics === true || d.explicit_content_lyrics === 1,
     clean: !d.explicit_lyrics && d.explicit_content_lyrics === 3,
-    url: d.link || '', previewUrl: d.preview || '',
+    url: d.link || '', previewUrl: d.preview || '', albumId: d.album?.id ? String(d.album.id) : '',
   });
   const fromApple = (r) => ({
     source: 'apple', id: String(r.trackId), artist: r.artistName, title: r.trackName, album: r.collectionName || '',
     artwork: (r.artworkUrl100 || '').replace('100x100bb', '120x120bb'), durationMs: r.trackTimeMillis || 0,
     explicit: r.trackExplicitness === 'explicit', clean: r.trackExplicitness === 'cleaned',
-    url: r.trackViewUrl || '', previewUrl: r.previewUrl || '',
+    url: r.trackViewUrl || '', previewUrl: r.previewUrl || '', genre: r.primaryGenreName || '',
   });
+
+  // Genre, so the DJ can sort requests into playlists. Apple's results include it; for Deezer it
+  // comes from the song's album, looked up once when the guest adds the song.
+  const genreLookups = new Map();
+  function lookUpGenre(t) {
+    if (t.genre || t.source !== 'deezer' || !t.albumId) return Promise.resolve();
+    if (!genreLookups.has(t.albumId)) {
+      genreLookups.set(t.albumId, config
+        .then(({ deezerApi = 'https://api.deezer.com' }) => jsonp(`${deezerApi}/album/${encodeURIComponent(t.albumId)}?output=jsonp`))
+        .then((album) => album?.genres?.data?.[0]?.name || '')
+        .catch(() => ''));
+    }
+    return genreLookups.get(t.albumId).then((genre) => { if (genre) { t.genre = genre; saveList(); } });
+  }
 
   async function deezerSearch(term) {
     const { deezerApi = 'https://api.deezer.com' } = await config;
@@ -269,10 +288,11 @@
   const keyOf = (s) => s.track ? trackKey(s.track) : 'm' + (s.artist + '|' + s.title).toLowerCase();
   const inList = (key) => myList.some((s) => s.key === key);
 
-  function closeResults() { results.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; }
+  function closeResults() { results.hidden = true; q.setAttribute('aria-expanded', 'false'); active = -1; syncPlayButtons(); }
   function showInfo(text, withManual) {
     results.innerHTML = `<li class="info">${esc(text)}${withManual ? ' <button type="button" class="link" data-manual>type it in yourself</button>' : ''}</li>`;
     results.hidden = false;
+    syncPlayButtons();
   }
 
   function renderResults() {
@@ -310,6 +330,7 @@
     }
     myList.push(song);
     saveList(); renderList();
+    if (song.track) lookUpGenre(song.track);
   }
   function removeFromList(key) {
     myList = myList.filter((s) => s.key !== key);
@@ -396,6 +417,10 @@
       msg.className = 'err'; msg.textContent = 'Add at least one song to your list first.';
       return;
     }
+    // Give genre lookups that are still running a moment to finish.
+    const pending = Promise.all(myList.filter((s) => s.track).map((s) => lookUpGenre(s.track)));
+    $('btn').disabled = true;
+    await Promise.race([pending, new Promise((r) => setTimeout(r, 3000))]);
     const songs = myList.map((s) => (s.track ? { track: s.track } : { artist: s.artist, title: s.title }));
     const data = { songs, name: $('name').value, note: $('note').value, website: $('website').value };
     $('btn').disabled = true;

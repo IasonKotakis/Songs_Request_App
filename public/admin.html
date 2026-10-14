@@ -28,6 +28,10 @@
     .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
     .tabs button { background: transparent; color: var(--muted); border-color: var(--line); }
     .tabs button.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .genres { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+    .genres button { padding: 5px 11px; border-radius: 999px; font-size: .85rem; font-weight: 600; background: transparent; color: var(--muted); border-color: var(--line); }
+    .genres button.on { background: var(--badge); color: var(--text); border-color: var(--accent); }
+    .genres button span { opacity: .7; font-weight: 400; }
     .table-scroll { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; font-size: .95rem; }
     th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -102,6 +106,7 @@
         <button id="tabSongs" class="on" type="button">Songs (grouped)</button>
         <button id="tabAll" type="button">All requests</button>
       </div>
+      <div class="genres" id="genres" aria-label="Filter by genre"></div>
       <div class="table-scroll"><table id="table"></table></div>
       <p id="empty" class="muted" hidden>No requests yet. Share the QR code, or <a href="/" target="_blank" rel="noopener">open the guest page</a> to add one yourself.</p>
     </section>
@@ -165,21 +170,49 @@
     } else {
       $('qr').textContent = 'QR library failed to load';
     }
-    const k = encodeURIComponent(key);
-    $('exTxt').href = '/export.txt?key=' + k;
-    $('exCsv').href = '/export.csv?key=' + k;
+    updateExports();
   }
 
+  // ---------- genre filter: the list and the exports show one genre at a time ----------
+  let genreFilter = '';
+  const genreOfRequest = (r) => r.track?.genre || 'Unknown';
+  function updateExports() {
+    const query = '?key=' + encodeURIComponent(key) + (genreFilter ? '&genre=' + encodeURIComponent(genreFilter) : '');
+    $('exTxt').href = '/export.txt' + query;
+    $('exCsv').href = '/export.csv' + query;
+    const which = genreFilter ? ` (${genreFilter})` : '';
+    $('exTxt').textContent = 'Export .txt' + which;
+    $('exCsv').textContent = 'Export .csv' + which;
+  }
+  function renderGenres(songs) {
+    const counts = new Map();
+    songs.forEach((s) => counts.set(s.genre, (counts.get(s.genre) || 0) + 1));
+    if (genreFilter && !counts.has(genreFilter)) { genreFilter = ''; updateExports(); }
+    const chips = [['', 'All genres', songs.length], ...[...counts].sort((a, b) => b[1] - a[1]).map(([g, n]) => [g, g, n])];
+    $('genres').innerHTML = songs.length ? chips.map(([g, label, n]) =>
+      `<button type="button" class="${g === genreFilter ? 'on' : ''}" data-genre="${esc(g)}">${esc(label)} <span>${n}</span></button>`).join('') : '';
+  }
+  $('genres').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-genre]');
+    if (!chip) return;
+    genreFilter = chip.dataset.genre;
+    updateExports();
+    load();
+  });
+
   async function load() {
-    const [all, songs] = await Promise.all([api('/api/requests').then((r) => r.json()), api('/api/songs').then((r) => r.json())]);
-    $('sTotal').textContent = all.length;
-    $('sUnique').textContent = songs.length;
-    $('sGuests').textContent = new Set(all.map((r) => r.name.toLowerCase()).filter(Boolean)).size;
-    $('empty').hidden = all.length > 0;
-    $('table').hidden = all.length === 0;
+    const [allRequests, allSongs] = await Promise.all([api('/api/requests').then((r) => r.json()), api('/api/songs').then((r) => r.json())]);
+    renderGenres(allSongs);
+    const songs = allSongs.filter((s) => !genreFilter || s.genre === genreFilter);
+    const all = allRequests.filter((r) => !genreFilter || genreOfRequest(r) === genreFilter);
+    $('sTotal').textContent = allRequests.length;
+    $('sUnique').textContent = allSongs.length;
+    $('sGuests').textContent = new Set(allRequests.map((r) => r.name.toLowerCase()).filter(Boolean)).size;
+    $('empty').hidden = allRequests.length > 0;
+    $('table').hidden = allRequests.length === 0;
 
     if (view === 'songs') {
-      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Votes</th><th>Requested by</th><th>Find it</th><th></th></tr>' +
+      $('table').innerHTML = '<tr><th>#</th><th>Artist</th><th>Song</th><th>Genre</th><th>Votes</th><th>Requested by</th><th>Find it</th><th></th></tr>' +
         songs.map((s, i) => `<tr>
           <td>${i + 1}</td><td>${esc(s.artist)}</td>
           <td><div class="song">${s.track?.previewUrl || s.track?.source === 'deezer' ? `<button class="play" data-preview="${esc(s.track.previewUrl || 'deezer:' + s.track.id)}" data-deezer="${s.track.source === 'deezer' ? esc(s.track.id) : ''}" title="Play 30s preview">▶</button>` : ''}${s.track?.artwork ? `<img class="art" src="${esc(s.track.artwork)}" alt="" loading="lazy">` : ''}<div>
@@ -187,6 +220,7 @@
             ${s.track?.album ? `<div class="muted small">${esc(s.track.album)}</div>` : ''}
             ${s.notes.length ? `<div class="muted small">💬 ${s.notes.map(esc).join('<br>💬 ')}</div>` : ''}
           </div></div></td>
+          <td class="small muted">${esc(s.genre)}</td>
           <td><span class="badge">${s.count}</span></td><td class="small">${esc(s.requestedBy.join(', '))}</td>
           <td class="links">${s.links.listen ? `<a href="${esc(s.links.listen)}" target="_blank" rel="noopener">${s.track.source === 'deezer' ? 'Deezer' : 'Apple Music'}</a>` : ''}<a href="${s.links.spotify}" target="_blank" rel="noopener">Spotify</a><a href="${s.links.youtube}" target="_blank" rel="noopener">YouTube</a><a href="${s.links.beatport}" target="_blank" rel="noopener">Beatport</a></td>
           <td><button class="del" data-ids="${esc(s.ids.join(','))}" data-title="${esc(s.title)}" title="Remove this song">✕</button></td>
@@ -205,7 +239,7 @@
   $('refresh').addEventListener('click', load);
   $('copyBtn').addEventListener('click', () => navigator.clipboard.writeText($('guestUrl').value));
   $('copyTxt').addEventListener('click', async (e) => {
-    const text = await api('/export.txt').then((r) => r.text());
+    const text = await api('/export.txt' + (genreFilter ? '?genre=' + encodeURIComponent(genreFilter) : '')).then((r) => r.text());
     await navigator.clipboard.writeText(text);
     e.target.textContent = 'Copied!';
     setTimeout(() => (e.target.textContent = 'Copy list'), 1500);

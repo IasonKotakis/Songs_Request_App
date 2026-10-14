@@ -42,6 +42,7 @@ function cleanTrack(t) {
     artist,
     title,
     album: clean(t.album, 160),
+    genre: clean(t.genre, 40),
     artwork: safeUrl(t.artwork, hosts.artwork),
     durationMs: Number.isFinite(durationMs) && durationMs > 0 ? Math.min(Math.round(durationMs), 3_600_000) : 0,
     explicit: t.explicit === true,
@@ -90,12 +91,15 @@ function formatDuration(ms) {
   return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
+// A song's genre (from the catalog); typed-in songs and songs without one are "Unknown".
+export const genreOf = (s) => s.track?.genre || 'Unknown';
+
 export function toCsv(songs) {
-  const rows = [['Artist', 'Title', 'Album', 'Length', 'Times requested', 'Requested by', 'Notes', 'Found in catalog', 'Song link', 'Spotify search', 'YouTube search', 'Beatport search']];
+  const rows = [['Artist', 'Title', 'Genre', 'Album', 'Length', 'Times requested', 'Requested by', 'Notes', 'Found in catalog', 'Song link', 'Spotify search', 'YouTube search', 'Beatport search']];
   for (const s of songs) {
     const l = links(s);
     const t = s.track || {};
-    rows.push([s.artist, s.title, t.album, formatDuration(t.durationMs), s.count, s.requestedBy.join('; '), s.notes.join(' | '), s.track ? (s.track.source === 'deezer' ? 'Deezer' : 'Apple Music') : 'no (typed manually)', l.listen, l.spotify, l.youtube, l.beatport]);
+    rows.push([s.artist, s.title, genreOf(s), t.album, formatDuration(t.durationMs), s.count, s.requestedBy.join('; '), s.notes.join(' | '), s.track ? (s.track.source === 'deezer' ? 'Deezer' : 'Apple Music') : 'no (typed manually)', l.listen, l.spotify, l.youtube, l.beatport]);
   }
   return '﻿' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 }
@@ -197,13 +201,17 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       }
       if (method === 'GET') {
         const requests = await store.list();
+        // Exports can be limited to one genre (?genre=Pop), to make one playlist per genre.
+        const genre = url.searchParams.get('genre');
+        const songsFor = (list) => groupSongs(list).filter((s) => !genre || genreOf(s) === genre);
         const stamp = new Date().toISOString().slice(0, 10);
-        const download = (ext) => ({ 'Content-Disposition': `attachment; filename="song-requests-${stamp}.${ext}"` });
+        const slug = genre ? '-' + genre.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+        const download = (ext) => ({ 'Content-Disposition': `attachment; filename="song-requests${slug}-${stamp}.${ext}"` });
         switch (pathname) {
           case '/api/requests': return json(requests);
-          case '/api/songs': return json(groupSongs(requests).map((s) => ({ ...s, links: links(s) })));
-          case '/export.csv': return text(toCsv(groupSongs(requests)), 'text/csv; charset=utf-8', download('csv'));
-          case '/export.txt': return text(toTxt(groupSongs(requests)), 'text/plain; charset=utf-8', download('txt'));
+          case '/api/songs': return json(groupSongs(requests).map((s) => ({ ...s, genre: genreOf(s), links: links(s) })));
+          case '/export.csv': return text(toCsv(songsFor(requests)), 'text/csv; charset=utf-8', download('csv'));
+          case '/export.txt': return text(toTxt(songsFor(requests)), 'text/plain; charset=utf-8', download('txt'));
           case '/export.json': return json(requests, 200, download('json'));
         }
       }

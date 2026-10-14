@@ -26,6 +26,7 @@ const pickedTrack = {
   url: 'https://music.apple.com/us/album/one-more-time/697194953?i=697195787',
   previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview/a/b.m4a',
   clean: false,
+  genre: 'Electronic',
 };
 
 test('guest and admin pages load, config gives the party name', async () => {
@@ -55,7 +56,7 @@ test('stores, groups duplicates and exports', async () => {
 
   const txt = await (await admin('/export.txt')).text();
   assert.strictEqual(txt, 'Daft Punk - One More Time\nRobyn - Dancing On My Own\n');
-  assert.match(await (await admin('/export.csv')).text(), /"Daft Punk","One More Time","","","2","Ana; Bo"/);
+  assert.match(await (await admin('/export.csv')).text(), /"Daft Punk","One More Time","Unknown","","","2","Ana; Bo"/);
 
   const saved = JSON.parse(fs.readFileSync(path.join(process.env.DATA_DIR, 'requests.json'), 'utf8'));
   assert.strictEqual(saved.length, 3);
@@ -139,7 +140,7 @@ test('songs picked from Deezer keep Deezer links; links to other sites are dropp
   const deezer = {
     source: 'deezer', id: '350171311', artist: 'Kendrick Lamar', title: 'DNA.', album: 'DAMN.',
     artwork: 'https://cdn-images.dzcdn.net/images/cover/abc/250x250-000000-80-0-0.jpg', durationMs: 177000, explicit: true, clean: false,
-    url: 'https://www.deezer.com/track/350171311', previewUrl: 'https://cdnt-preview.dzcdn.net/api/1/1/a/b/c/0/abc.mp3?hdnea=exp=1',
+    url: 'https://www.deezer.com/track/350171311', genre: 'Rap/Hip Hop', previewUrl: 'https://cdnt-preview.dzcdn.net/api/1/1/a/b/c/0/abc.mp3?hdnea=exp=1',
   };
   await post({ songs: [{ track: deezer }, { track: { ...deezer, id: '1', artwork: 'https://mzstatic.com.evil.example/a.jpg', url: 'https://music.apple.com/x' } }] });
   const [a, b] = (await (await admin('/api/requests')).json()).slice(-2).map((r) => r.track);
@@ -150,3 +151,18 @@ test('songs picked from Deezer keep Deezer links; links to other sites are dropp
   assert.match(await (await admin('/export.csv')).text(), /"Deezer","https:\/\/www\.deezer\.com\/track\/350171311"/);
   assert.ok(song.track.explicit);
 });
+
+test('songs carry a genre, and exports can be limited to one genre', async () => {
+  const songs = await (await admin('/api/songs')).json();
+  assert.strictEqual(songs.find((x) => x.title === 'One More Time').genre, 'Electronic');
+  assert.strictEqual(songs.find((x) => x.title === 'Hang With Me').genre, 'Unknown');
+
+  const res = await admin('/export.txt?genre=' + encodeURIComponent('Rap/Hip Hop'));
+  assert.strictEqual(await res.text(), 'Kendrick Lamar - DNA.\n');
+  assert.match(res.headers.get('content-disposition'), /song-requests-rap-hip-hop-/);
+  const csv = await (await admin('/export.csv?genre=Electronic')).text();
+  assert.match(csv, /"Artist","Title","Genre"/);
+  assert.ok(csv.includes('"One More Time","Electronic"') && !csv.includes('DNA.'));
+  assert.strictEqual(await (await admin('/export.txt?genre=Unknown')).text(), toTxtTitles(songs.filter((x) => x.genre === 'Unknown')));
+});
+const toTxtTitles = (list) => list.map((x) => `${x.artist} - ${x.title}`).join('\n') + '\n';

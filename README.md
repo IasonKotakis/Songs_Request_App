@@ -7,6 +7,7 @@ The DJ gets a dashboard where they can see every request and export the list to 
 - **DJ dashboard** (`/admin`, protected by a password):
   - the QR code for the guest page, plus the plain link, ready to download or print as a poster
   - all requests, with duplicates grouped and counted as votes, most-requested first
+  - each song's **genre** (from the catalog), with filter buttons per genre. The exports and *Copy list* follow the filter, so you can make one playlist per genre
   - album art, album name and a ▶ 30-second preview for each song, plus a direct **Deezer** link for songs picked from search
   - songs that were typed in by hand are marked **typed**, so you know to double-check them
   - one-click Spotify / YouTube / Beatport search links for each song
