@@ -91,6 +91,7 @@
           <a class="btn ghost" id="exCsv">Export .csv</a>
           <button class="ghost" id="copyTxt" type="button">Copy list</button>
           <button class="ghost" id="refresh" type="button">Refresh</button>
+          <span class="small muted" id="updated"></span>
         </div>
       </div>
       <p class="muted small">
@@ -99,6 +100,7 @@
         <a href="https://soundiiz.com/" target="_blank" rel="noopener">Soundiiz</a> to build a Spotify / Apple Music / Tidal playlist in one go.
         The <b>.csv</b> has search links for each track.
       </p>
+      <p class="small" id="loadErr" style="color: var(--danger)" role="alert"></p>
     </section>
 
     <section class="card">
@@ -138,7 +140,7 @@
   const api = async (path, opts = {}) => {
     const res = await fetch(path, { ...opts, headers: { Authorization: 'Bearer ' + key, ...(opts.headers || {}) } });
     if (res.status === 401) throw new Error('unauthorized');
-    if (!res.ok) throw new Error('Request failed');
+    if (!res.ok) throw new Error(`the server answered ${res.status} for ${path.split('?')[0]}`);
     return res;
   };
 
@@ -200,7 +202,18 @@
     load();
   });
 
+  // Reloads the lists. Problems are shown on the page instead of failing silently.
   async function load() {
+    try {
+      await render();
+      $('loadErr').textContent = '';
+      $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch (err) {
+      console.error(err);
+      $('loadErr').textContent = `Couldn't load the requests: ${err.message === 'unauthorized' ? 'wrong password, reload the page and log in again' : err.message}.`;
+    }
+  }
+  async function render() {
     const [allRequests, allSongs] = await Promise.all([api('/api/requests').then((r) => r.json()), api('/api/songs').then((r) => r.json())]);
     renderGenres(allSongs);
     const songs = allSongs.filter((s) => !genreFilter || s.genre === genreFilter);
@@ -293,6 +306,8 @@
   });
 
   if (key) unlock(key);
+  // Keep the lists fresh while the dashboard is open.
+  setInterval(() => { if (!$('app').hidden && !document.hidden) load(); }, 20000);
 </script>
 </body>
 </html>

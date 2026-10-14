@@ -51,10 +51,12 @@
     h1 span { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
     p.sub { color: var(--muted); margin: 0 0 24px; }
     main { padding-top: 56px; }
-    section.card { margin-top: 18px; }
-    section.card h2 { font-size: 1.1rem; margin: 0 0 4px; }
-    #reqFilter { margin: 10px 0 0; padding: 9px 12px; font-size: .95rem; }
+    .hint.tight { margin: 0 0 6px; }
+    .row.tight { margin-top: 6px; }
+    #reqFilter { margin: 4px 0 0; padding: 9px 12px; font-size: .95rem; }
     #requested { max-height: 480px; overflow-y: auto; }
+    .rank { flex: none; width: 26px; text-align: center; font-weight: 700; color: var(--muted); font-size: .95rem; }
+    .rank.medal { font-size: 1.25rem; }
     #requested:empty { display: none; }
     .vote { flex: none; display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 12px; border-radius: 19px; border: 1px solid var(--line);
       background: transparent; color: var(--text); font-size: .95rem; cursor: pointer; }
@@ -65,7 +67,7 @@
     .ask b { flex: 1 1 100%; }
     #reqMsg { min-height: 1.2em; }
     .hint.err { color: var(--err); }
-    form, section.card { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+    form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
     label, .label { display: block; font-size: .85rem; font-weight: 600; margin: 18px 0 6px; color: var(--muted); }
     label:first-child { margin-top: 0; }
     input, textarea { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--field); color: var(--text); font-size: 1rem; }
@@ -119,12 +121,23 @@
   <img class="poster poster-dark" src="/background-dark.jpg" alt="" onerror="this.remove()">
   <div class="intro">
     <h1>🎶 Request songs for <span class="event-name">the party</span></h1>
-    <p class="sub">Search, tap ▶ to hear a preview, and tap + to add songs to your list. Send them all in one go.</p>
+    <p class="sub">👍 the songs you want from the most requested, or search for your own: ▶ to preview, + to add, then send them all in one go.</p>
   </div>
 
   <form id="f" autocomplete="off" novalidate>
     <label for="name">Your name</label>
     <input id="name" maxlength="60" placeholder="In Latin letters, e.g. Stergios" autocomplete="given-name">
+
+    <!-- What everyone has asked for so far: 👍 instead of requesting a song again. -->
+    <div id="requestedBox" hidden>
+      <div class="label">🔥 Most requested <span id="reqCount" class="opt"></span></div>
+      <p class="hint tight">Want to hear one of these too? Tap 👍.</p>
+      <input id="reqFilter" type="search" placeholder="Filter by song or artist" aria-label="Filter requested songs" hidden>
+      <ol id="requested" class="songs"></ol>
+      <p id="reqNone" class="hint" hidden>No requested song matches that.</p>
+      <div class="row tight"><button type="button" class="link" id="reqToggle" hidden></button></div>
+      <div id="reqMsg" class="hint" role="status"></div>
+    </div>
 
     <label for="q">Search for a song</label>
     <div class="search">
@@ -157,15 +170,6 @@
   </form>
   <p class="count" id="count"></p>
 
-  <!-- Everything requested so far: guests can 👍 instead of requesting a song again. -->
-  <section class="card" id="requestedBox" hidden>
-    <h2>Already requested <span id="reqCount" class="opt"></span></h2>
-    <p class="hint">Want to hear one of these too? Tap 👍. Most-wanted songs are on top.</p>
-    <input id="reqFilter" type="search" placeholder="Filter by song or artist" aria-label="Filter requested songs">
-    <ul id="requested" class="songs"></ul>
-    <p id="reqNone" class="hint" hidden>No requested song matches that.</p>
-    <div id="reqMsg" class="hint" role="status"></div>
-  </section>
 </main>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -339,17 +343,12 @@
     results.innerHTML = tracks.map((t, i) => {
       const added = inList(trackKey(t));
       const req = requestedByKey.get(serverKey(t.artist, t.title));
-      if (req && askVoteKey === req.key) {
-        return `<li class="active"><div class="ask"><b>"${esc(t.title)}" was already requested by ${req.count} ${req.count === 1 ? 'person' : 'people'}.</b>
-          <button type="button" class="small" data-vote-now="${esc(req.key)}">👍 Upvote it</button>
-          <button type="button" class="link" data-vote-cancel>Cancel</button></div></li>`;
-      }
       const reqNote = req ? ` · <span class="req">${req.mine ? '✓ you asked' : '👍 ' + req.count + ' requested'}</span>` : '';
       return `<li role="option" data-i="${i}" class="${i === active ? 'active' : ''}" aria-selected="${added}">
         ${cover(t)}
         <div class="meta"><b>${esc(t.title)}${badge(t)}</b><span>${esc(t.artist)}${reqNote || (t.album ? ' · ' + esc(t.album) : '')}</span></div>
         ${playButton(t)}
-        <span class="icon ${added ? 'added' : 'add'}" aria-hidden="true">${added ? '✓' : '+'}</span>
+        <span class="icon ${added || req?.mine ? 'added' : 'add'}" aria-hidden="true">${added || req?.mine ? '✓' : req ? '👍' : '+'}</span>
       </li>`;
     }).join('');
     results.hidden = false;
@@ -363,7 +362,7 @@
     const req = requestedByKey.get(serverKey(t.artist, t.title));
     if (inList(key)) removeFromList(key);
     else if (req?.mine) { msg.className = 'ok'; msg.textContent = `You already asked for "${t.title}" 👍`; }
-    else if (req) askVoteKey = req.key;           // already requested by someone else: offer a 👍 instead
+    else if (req) return vote(req.key, msg);      // already on the list: tapping it counts as a 👍
     else addToList({ key, track: t });
     renderResults();
   }
@@ -424,9 +423,6 @@
   document.addEventListener('click', (e) => {
     const preview = e.target.closest('[data-preview]');
     if (preview) return togglePreview(preview.dataset.preview, preview.dataset.deezer);
-    const voteNow = e.target.closest('[data-vote-now]');
-    if (voteNow) { askVoteKey = null; return vote(voteNow.dataset.voteNow, msg).then(renderResults); }
-    if (e.target.closest('[data-vote-cancel]')) { askVoteKey = null; return renderResults(); }
     const voteBtn = e.target.closest('[data-vote]');
     if (voteBtn) return vote(voteBtn.dataset.vote, $('reqMsg'));
     if (e.target.closest('[data-manual]')) return openManual();
@@ -540,7 +536,8 @@
   const serverKey = (artist, title) => normalizeKey(artist) + '|' + normalizeKey(title);
   let requested = [];
   let requestedByKey = new Map();
-  let askVoteKey = null;   // search result currently showing "already requested, upvote?"
+  let showAllRequested = false;
+  const TOP = 5;
 
   async function loadRequested() {
     try {
@@ -554,13 +551,21 @@
   function renderRequested() {
     $('requestedBox').hidden = requested.length === 0;
     $('reqCount').textContent = requested.length ? `(${requested.length})` : '';
-    const words = normalizeKey($('reqFilter').value).split(' ').filter(Boolean);
-    const shown = requested.filter((s) => {
+    // Top 5 by default; "Show all" opens the whole list with a filter box.
+    const all = showAllRequested || requested.length <= TOP;
+    $('reqFilter').hidden = !showAllRequested;
+    $('reqToggle').hidden = requested.length <= TOP;
+    $('reqToggle').textContent = showAllRequested ? 'Show only the top 5' : `Show all ${requested.length} requested songs`;
+    const words = showAllRequested ? normalizeKey($('reqFilter').value).split(' ').filter(Boolean) : [];
+    const ranked = requested.map((s, i) => ({ ...s, rank: i + 1 }));
+    const shown = (all ? ranked : ranked.slice(0, TOP)).filter((s) => {
       const text = normalizeKey(`${s.artist} ${s.title}`);
       return words.every((w) => text.includes(w));
     });
     $('reqNone').hidden = shown.length > 0 || !requested.length;
+    const medal = (r) => ['🥇', '🥈', '🥉'][r - 1];
     $('requested').innerHTML = shown.map((s) => `<li>
+        <span class="rank ${medal(s.rank) ? 'medal' : ''}" aria-label="Number ${s.rank}">${medal(s.rank) || '#' + s.rank}</span>
         ${cover(s.track)}
         <div class="meta"><b>${esc(s.title)}${badge(s.track)}</b><span>${esc(s.artist)}${s.track?.genre ? ' · ' + esc(s.track.genre) : ''}</span></div>
         ${playButton(s.track, true)}
@@ -592,6 +597,12 @@
   }
 
   $('reqFilter').addEventListener('input', renderRequested);
+  $('reqToggle').addEventListener('click', () => {
+    showAllRequested = !showAllRequested;
+    if (!showAllRequested) $('reqFilter').value = '';
+    renderRequested();
+    if (showAllRequested) $('reqFilter').focus();
+  });
   loadRequested();
   setInterval(() => { if (!document.hidden) loadRequested(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) loadRequested(); });
