@@ -4,6 +4,7 @@ rem Double-click this file to run the app on this computer.
 rem It works from wherever the folder is, no terminal or npm needed.
 
 cd /d "%~dp0"
+if not defined EVENT_NAME set "EVENT_NAME=Stergio's & Jim's Party"
 
 where node >nul 2>nul
 if errorlevel 1 (
