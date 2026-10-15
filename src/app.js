@@ -140,7 +140,9 @@ async function checkGuest(store, rawName, voter, { required = true, requireGuest
   if (!voter) return { error: 'Please reload the page and try again.', status: 400 };
   const claims = await loadClaims(store);
   const owner = claims[label];
-  if (owner && owner !== voter) return { error: `${label} has already joined on another phone. If that wasn't you, tell the hosts.`, status: 403 };
+  if (owner && owner !== voter) {
+    return { error: `${label} has already joined on another phone. If you're not ${label}, try your full name or your Instagram username. If you are, tell the hosts.`, status: 403 };
+  }
   const already = Object.keys(claims).find((g) => claims[g] === voter);
   if (already && already !== label) return { error: `This phone has already joined as ${already}.`, status: 403 };
   if (!owner) {
