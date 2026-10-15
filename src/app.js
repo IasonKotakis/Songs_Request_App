@@ -74,39 +74,78 @@ export function nameKey(name) {
     .split(/[^a-z]+/).filter(Boolean).map(word).join(' ');
 }
 
-// Finds the guest on the list: the full name, or just a first name if only one guest has it.
-// Returns { name } as written on the list, { ambiguous: true }, or null.
-export function findGuest(name, guests) {
-  const key = nameKey(name);
+// A guest list line: "Stergios Plakas, @stergiosplakas", "Stergios Plakas" or just "@tolarazz".
+export function parseGuestLine(line) {
+  const text = String(line || '');
+  const username = ((text.match(/@([A-Za-z0-9._]{1,40})/) || [])[1] || '').toLowerCase();
+  const name = toGreeklish(clean(text.replace(/@[A-Za-z0-9._]+/g, ' ').replace(/,/g, ' '), 60)).replace(/\s+/g, ' ').trim();
+  if (!name && !username) return null;
+  return { name: name || '@' + username, username };
+}
+const guestLine = (g) => (g.username && g.name !== '@' + g.username ? `${g.name}, @${g.username}` : g.name);
+
+// Finds who a guest is from what they typed: their Instagram username (with or without @),
+// their full name, or a first name only one guest has. Returns { guest }, { ambiguous: true } or null.
+export function findGuest(typed, guests) {
+  const handle = String(typed || '').trim().replace(/^@/, '').toLowerCase();
+  const byUsername = guests.find((g) => g.username && g.username === handle);
+  if (byUsername) return { guest: byUsername };
+  const key = nameKey(typed);
   if (!key) return null;
-  const full = guests.find((g) => nameKey(g) === key);
-  if (full) return { name: full };
+  const named = guests.filter((g) => !g.name.startsWith('@'));
   const first = key.split(' ')[0];   // a unique first name is enough, even with a misspelt surname
-  const byFirst = guests.filter((g) => nameKey(g).split(' ')[0] === first);
-  if (byFirst.length === 1) return { name: byFirst[0] };
+  const byFirst = named.filter((g) => nameKey(g.name).split(' ')[0] === first);
+  // Just a first name that several guests share (Maria Lapikou, Mariaa): ask for more.
+  if (!key.includes(' ') && byFirst.length > 1) return { ambiguous: true };
+  const full = named.find((g) => nameKey(g.name) === key);
+  if (full) return { guest: full };
+  if (byFirst.length === 1) return { guest: byFirst[0] };
   return byFirst.length > 1 ? { ambiguous: true } : null;
 }
 
-async function loadGuests(store) {
+async function loadSetting(store, key, fallback) {
   try {
-    const names = JSON.parse((await store.getSetting?.('guests')) || '[]');
-    return Array.isArray(names) ? names : [];
+    const value = JSON.parse((await store.getSetting?.(key)) || 'null');
+    return value ?? fallback;
   } catch {
-    return [];
+    return fallback;
   }
 }
+async function loadGuests(store) {
+  const list = await loadSetting(store, 'guests', []);
+  return (Array.isArray(list) ? list : []).map((g) => (typeof g === 'string' ? { name: g, username: '' } : g));
+}
+// Which phone each guest joined from: { "Stergios Plakas": "<device id>" }.
+const loadClaims = async (store) => loadSetting(store, 'claims', {});
 
-// The name to store for a guest, or an error response if they're not on the guest list.
-// (The guest page always asks for a name; the server insists on one for votes and once there's a guest list.)
-async function checkGuest(store, rawName, { required = true } = {}) {
+// Who's taking part. Without a guest list anyone can, under the name they give.
+// With one, the guest must be on it, and the first phone a guest joins from is locked to them:
+// nobody else can use that guest, and that phone can't switch to another guest (the DJ can unlock).
+// Returns { name } (as written on the list) or { error, status }.
+async function checkGuest(store, rawName, voter, { required = true } = {}) {
   const name = cleanName(rawName);
+  const typed = clean(rawName, 60);
   const guests = await loadGuests(store);
-  if (!name && (required || guests.length)) return { error: 'Please add your name first (in Latin letters, e.g. Stergios).', status: 400 };
-  if (!guests.length) return { name };            // no guest list: everyone's welcome
-  const found = findGuest(name, guests);
-  if (found?.name) return { name: found.name };
-  if (found?.ambiguous) return { error: `There's more than one ${name} on the guest list. Please add your surname too.`, status: 403 };
-  return { error: `Sorry, "${name}" isn't on the guest list. Use your name as the hosts know it, in Latin letters.`, status: 403 };
+  if (!guests.length) {
+    if (!name && required) return { error: 'Please add your name first (in Latin letters, e.g. Stergios).', status: 400 };
+    return { name };
+  }
+  if (!typed) return { error: 'Please add your first name or Instagram username first.', status: 400 };
+  const found = findGuest(typed, guests);
+  if (found?.ambiguous) return { error: `There's more than one ${name} on the guest list. Add your surname, or use your Instagram username.`, status: 403 };
+  if (!found) return { error: `Sorry, "${typed}" isn't on the guest list. Use your first name or Instagram username.`, status: 403 };
+  const label = found.guest.name;
+  if (!voter) return { error: 'Please reload the page and try again.', status: 400 };
+  const claims = await loadClaims(store);
+  const owner = claims[label];
+  if (owner && owner !== voter) return { error: `${label} has already joined on another phone. If that wasn't you, tell the hosts.`, status: 403 };
+  const already = Object.keys(claims).find((g) => claims[g] === voter);
+  if (already && already !== label) return { error: `This phone has already joined as ${already}.`, status: 403 };
+  if (!owner) {
+    claims[label] = voter;
+    await store.setSetting('claims', JSON.stringify(claims));
+  }
+  return { name: label };
 }
 
 // A guest's device id (random, kept on their phone), used so each guest counts once per song.
@@ -209,11 +248,15 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
     if (method === 'GET' && pathname === '/health') return json({ ok: true });
     if (method === 'GET' && pathname === '/api/config') return json(config);
 
-    // The guest page checks a name as it's typed: { ok, name } or { ok: false, error }.
-    if (method === 'GET' && pathname === '/api/guest-check') {
+    // A guest says who they are (name or Instagram username) from their phone: { name, voter }.
+    // Answers { ok, name, locked } or { ok: false, error }. With a guest list this locks the phone to the guest.
+    if (method === 'POST' && pathname === '/api/join') {
       if (rateLimited(checkBuckets, ip, 60, 600_000)) return json({ ok: false, error: 'Too many tries, wait a few minutes.' }, 429);
-      const guest = await checkGuest(store, url.searchParams.get('name'));
-      return json(guest.error ? { ok: false, error: guest.error } : { ok: true, name: guest.name });
+      let body;
+      try { body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}'); } catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter));
+      const locked = (await loadGuests(store)).length > 0;
+      return json(guest.error ? { ok: false, error: guest.error } : { ok: true, name: guest.name, locked });
     }
 
     if (method === 'POST' && pathname === '/api/requests') {
@@ -232,7 +275,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       const songs = Array.isArray(body.songs) ? body.songs : [body];
       if (songs.length === 0) return json({ error: 'Add at least one song.' }, 400);
       if (songs.length > MAX_SONGS_PER_SEND) return json({ error: `You can send up to ${MAX_SONGS_PER_SEND} songs at a time.` }, 400);
-      const guest = await checkGuest(store, body.name, { required: false });
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { required: false });
       if (guest.error) return json({ error: guest.error }, guest.status);
       const name = guest.name;
       const note = clean(body.note, 200);
@@ -308,7 +351,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
         return json({ ok: true, count: song.count - mine.length });
       }
       if (mine.length) return json({ ok: true, count: song.count, already: true });
-      const guest = await checkGuest(store, body.name);
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter));
       if (guest.error) return json({ error: guest.error }, guest.status);
       const name = guest.name;
       if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {
@@ -319,28 +362,47 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
     }
 
     // Everything below is admin-only.
-    const adminRoutes = ['/api/requests', '/api/songs', '/api/guests', '/export.csv', '/export.txt', '/export.json'];
+    const adminRoutes = ['/api/requests', '/api/songs', '/api/guests', '/api/guests/unlock', '/export.csv', '/export.txt', '/export.json'];
     if (adminRoutes.includes(pathname) || pathname.startsWith('/api/requests/')) {
       const header = request.headers.get('authorization') || '';
       const provided = header.startsWith('Bearer ') ? header.slice(7) : url.searchParams.get('key') || '';
       if (!(await keyMatches(provided, adminKey))) return json({ error: 'Wrong admin key.' }, 401);
 
       // The guest list (one name per entry). An empty list lets everyone in.
+      // The guest list, one guest per line ("Name, @username"), and who has joined from which phone.
+      const guestInfo = async () => {
+        const guests = await loadGuests(store);
+        const claims = await loadClaims(store);
+        return { names: guests.map(guestLine), joined: guests.map((g) => g.name).filter((n) => claims[n]) };
+      };
       if (pathname === '/api/guests') {
-        if (method === 'GET') return json({ names: await loadGuests(store) });
+        if (method === 'GET') return json(await guestInfo());
         if (method === 'PUT') {
           let body;
           try { body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}'); } catch { return json({ error: 'Invalid JSON' }, 400); }
-          const list = Array.isArray(body.names) ? body.names : String(body.names || '').split(/[\n,;]+/);
-          const names = [];
-          for (const raw of list) {
-            const n = toGreeklish(clean(String(raw), 60)).replace(/\s+/g, ' ').trim();
-            if (n && !names.some((x) => nameKey(x) === nameKey(n))) names.push(n);
+          const lines = Array.isArray(body.names) ? body.names : String(body.names || '').split(/[\n;]+/);
+          const guests = [];
+          for (const line of lines) {
+            const g = parseGuestLine(line);
+            if (g && !guests.some((x) => nameKey(x.name) === nameKey(g.name) || (g.username && x.username === g.username))) guests.push(g);
           }
-          if (names.length > 500) return json({ error: 'That is a lot of guests! Up to 500 names.' }, 400);
-          await store.setSetting('guests', JSON.stringify(names));
-          return json({ names });
+          if (guests.length > 500) return json({ error: 'That is a lot of guests! Up to 500 names.' }, 400);
+          await store.setSetting('guests', JSON.stringify(guests));
+          // Keep the phone locks of guests who are still on the list.
+          const claims = await loadClaims(store);
+          const kept = Object.fromEntries(Object.entries(claims).filter(([n]) => guests.some((g) => g.name === n)));
+          await store.setSetting('claims', JSON.stringify(kept));
+          return json(await guestInfo());
         }
+      }
+      // Let a guest join again from a different phone.
+      if (pathname === '/api/guests/unlock' && method === 'POST') {
+        let body;
+        try { body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}'); } catch { return json({ error: 'Invalid JSON' }, 400); }
+        const claims = await loadClaims(store);
+        delete claims[body.name];
+        await store.setSetting('claims', JSON.stringify(claims));
+        return json(await guestInfo());
       }
       if (method === 'DELETE' && pathname.startsWith('/api/requests/')) {
         const id = decodeURIComponent(pathname.slice('/api/requests/'.length));

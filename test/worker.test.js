@@ -68,10 +68,11 @@ test('worker: votes are stored with the device id on D1', async () => {
   assert.strictEqual(mine.mine, true);
 });
 
-test('worker: the guest list is stored in D1 settings', async () => {
-  const put = await call('/api/guests', { method: 'PUT', headers: { Authorization: 'Bearer k', 'Content-Type': 'application/json' }, body: JSON.stringify({ names: ['Jim', 'Stergios'] }) });
-  assert.deepStrictEqual((await put.json()).names, ['Jim', 'Stergios']);
-  assert.deepStrictEqual(await (await adminCall('/api/guests')).json(), { names: ['Jim', 'Stergios'] });
-  assert.deepStrictEqual(await (await call('/api/guest-check?name=jimmy')).json(), { ok: false, error: 'Sorry, "jimmy" isn\'t on the guest list. Use your name as the hosts know it, in Latin letters.' });
-  assert.deepStrictEqual(await (await call('/api/guest-check?name=%CE%A3%CF%84%CE%AD%CF%81%CE%B3%CE%B9%CE%BF%CF%82')).json(), { ok: true, name: 'Stergios' });
+test('worker: the guest list and phone locks are stored in D1 settings', async () => {
+  const put = await call('/api/guests', { method: 'PUT', headers: { Authorization: 'Bearer k', 'Content-Type': 'application/json' }, body: JSON.stringify({ names: 'Jim, @jimpatman\nStergios' }) });
+  assert.deepStrictEqual((await put.json()).names, ['Jim, @jimpatman', 'Stergios']);
+  const join = async (name, voter) => (await call('/api/join', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, voter }) })).json();
+  assert.deepStrictEqual(await join('@JimPatman', 'phone-jim-12345'), { ok: true, name: 'Jim', locked: true });
+  assert.match((await join('jim', 'phone-other-123')).error, /already joined on another phone/);
+  assert.deepStrictEqual((await (await adminCall('/api/guests')).json()).joined, ['Jim']);
 });

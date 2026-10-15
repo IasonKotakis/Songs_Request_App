@@ -204,28 +204,41 @@ test('guest names are stored in Greeklish', async () => {
   assert.strictEqual((await vote({ key, voter: 'device-greek-3', name: '🎉🎉' })).status, 400);
 });
 
-test('with a guest list, only listed guests can request and vote, matched loosely and saved as listed', async () => {
+test('with a guest list, only listed guests take part, by name or Instagram username, one phone each', async () => {
   const put = (names) => fetch(base + '/api/guests', { method: 'PUT', headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ names }) });
+  const unlock = (name) => fetch(base + '/api/guests/unlock', { method: 'POST', headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+  const join = async (name, voter) => (await fetch(base + '/api/join', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, voter }) })).json();
   assert.strictEqual((await fetch(base + '/api/guests', { method: 'PUT', body: '{}' })).status, 401);
-  const saved = await (await put('Stergios Papadopoulos\nJim\nΆγγελος\nMaria A\nMaria B\njim')).json();
-  assert.deepStrictEqual(saved.names, ['Stergios Papadopoulos', 'Jim', 'Aggelos', 'Maria A', 'Maria B']);
+  const saved = await (await put('Στέργιος Πλάκας, @StergiosPlakas\nJim Patmanidis, @jimpatman\n@tolarazz\nMaria Lapikou, @maria_lapikou__\nMariaa, @_m.patman._\njim patmanidis')).json();
+  assert.deepStrictEqual(saved.names, ['Stergios Plakas, @stergiosplakas', 'Jim Patmanidis, @jimpatman', '@tolarazz', 'Maria Lapikou, @maria_lapikou__', 'Mariaa, @_m.patman._']);
 
-  const check = async (name) => (await fetch(base + '/api/guest-check?name=' + encodeURIComponent(name))).json();
-  assert.deepStrictEqual(await check('Στέργιος'), { ok: true, name: 'Stergios Papadopoulos' });
-  assert.deepStrictEqual(await check('angelos'), { ok: true, name: 'Aggelos' });
-  assert.match((await check('Maria')).error, /surname/);
-  assert.match((await check('Nikos')).error, /isn't on the guest list/);
+  // Name or username; the first phone a guest joins from is theirs.
+  assert.deepStrictEqual(await join('Στέργιος', 'phone-stergios-1'), { ok: true, name: 'Stergios Plakas', locked: true });
+  assert.deepStrictEqual(await join('@stergiosplakas', 'phone-stergios-1'), { ok: true, name: 'Stergios Plakas', locked: true });
+  assert.match((await join('stergios', 'phone-random-99')).error, /already joined on another phone/);
+  assert.match((await join('jim', 'phone-stergios-1')).error, /This phone has already joined as Stergios Plakas/);
+  assert.deepStrictEqual(await join('tolarazz', 'phone-tola-1'), { ok: true, name: '@tolarazz', locked: true });
+  assert.match((await join('Maria', 'phone-maria-1')).error, /surname, or use your Instagram username/);
+  assert.deepStrictEqual((await join('_m.patman._', 'phone-maria-1')).name, 'Mariaa');
+  assert.match((await join('Nikos', 'phone-nikos-1')).error, /isn't on the guest list/);
 
-  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'Nikos', voter: 'device-nikos-1' })).status, 403);
-  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], voter: 'device-anon-1' })).status, 400);
-  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'stergios', voter: 'device-sterg-1' })).status, 201);
+  // Requests and votes follow the same rules.
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'Nikos', voter: 'phone-nikos-1' })).status, 403);
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'Stergios', voter: 'phone-random-99' })).status, 403);
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'stergios', voter: 'phone-stergios-1' })).status, 201);
   const key = (await publicSongs()).find((s) => s.title === 'Waterloo').key;
-  assert.strictEqual((await vote({ key, voter: 'device-nikos-1', name: 'Nikos' })).status, 403);
-  assert.strictEqual((await vote({ key, voter: 'device-maria-b', name: 'maria b' })).status, 201);
+  assert.strictEqual((await vote({ key, voter: 'phone-random-99', name: 'Mariaa' })).status, 403);
+  assert.strictEqual((await vote({ key, voter: 'phone-jim-1', name: 'jimpatman' })).status, 201);
   const song = (await (await admin('/api/songs')).json()).find((s) => s.title === 'Waterloo');
-  assert.deepStrictEqual(song.requestedBy, ['Stergios Papadopoulos', 'Maria B']);
+  assert.deepStrictEqual(song.requestedBy, ['Stergios Plakas', 'Jim Patmanidis']);
+
+  // The DJ sees who joined and can unlock a guest who changed phone.
+  const info = await (await admin('/api/guests')).json();
+  assert.deepStrictEqual(info.joined, ['Stergios Plakas', 'Jim Patmanidis', '@tolarazz', 'Mariaa']);
+  assert.ok(!(await (await unlock('Stergios Plakas')).json()).joined.includes('Stergios Plakas'));
+  assert.strictEqual((await join('stergios', 'phone-stergios-new')).name, 'Stergios Plakas');
 
   // Clearing the list lets everyone in again.
   assert.deepStrictEqual((await (await put('')).json()).names, []);
-  assert.deepStrictEqual(await check('Nikos'), { ok: true, name: 'Nikos' });
+  assert.deepStrictEqual(await join('Nikos', 'phone-nikos-1'), { ok: true, name: 'Nikos', locked: false });
 });

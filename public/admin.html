@@ -44,6 +44,9 @@
     .play.playing { background: var(--accent); color: #fff; }
     textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: .95rem; background: var(--field); color: var(--text); resize: vertical; }
     summary { cursor: pointer; }
+    .joined { display: flex; flex-wrap: wrap; gap: 6px; }
+    .joined span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: .85rem; }
+    .joined button { padding: 2px 8px; font-size: .75rem; border-radius: 999px; background: transparent; color: var(--muted); border-color: var(--line); }
     .tag { font-size: .7rem; font-weight: 700; border: 1px solid var(--muted); color: var(--muted); border-radius: 3px; padding: 0 4px; }
     .badge { background: var(--badge); color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
@@ -108,13 +111,18 @@
     <section class="card">
       <details id="guestBox">
         <summary><b>👥 Guest list</b> <span class="small muted" id="guestStatus"></span></summary>
-        <p class="small muted">Paste the guests' names, one per line. Then only they can request songs and 👍. Names can be in Greek or Greeklish,
-          and guests can type them a little differently (Angelos / Aggelos, Christos / Xristos); a first name alone is enough if only one guest has it.
-          Leave it empty to let anyone with the link take part.</p>
-        <textarea id="guestNames" rows="8" placeholder="Stergios&#10;Jim&#10;Anny&#10;Maria A&#10;Maria B"></textarea>
+        <p class="small muted">One guest per line: <b>Name, @instagram</b> (either part is optional). Then only these guests can request songs and 👍.
+          Guests type their first name or their Instagram username. Names can be in Greek or Greeklish and spelled a little differently
+          (Angelos / Aggelos, Christos / Xristos); a first name is enough if only one guest has it.
+          The first phone a guest joins from is locked to them, so nobody else can use their name. Leave the list empty to let anyone with the link take part.</p>
+        <textarea id="guestNames" rows="10" placeholder="Stergios Plakas, @stergiosplakas&#10;Jim Patmanidis, @jimpatman&#10;@tolarazz"></textarea>
         <div class="row" style="margin-top: 10px">
           <button type="button" id="saveGuests">Save guest list</button>
           <span class="small muted" id="guestSaved"></span>
+        </div>
+        <div id="joinedBox" hidden>
+          <p class="small"><b id="joinedCount"></b> <span class="muted">· a guest who changed phone (or got signed in by someone else) can be unlocked to join again.</span></p>
+          <div class="joined" id="joinedList"></div>
         </div>
       </details>
     </section>
@@ -193,19 +201,29 @@
   }
 
   // ---------- guest list ----------
-  function showGuests(names) {
-    $('guestNames').value = names.join('\n');
-    $('guestStatus').textContent = names.length ? `· ${names.length} guests, only they can take part` : '· not set, anyone with the link can take part';
+  function showGuests({ names, joined = [] }, keepText) {
+    if (!keepText) $('guestNames').value = names.join('\n');
+    $('guestStatus').textContent = names.length ? `· ${names.length} guests, ${joined.length} joined` : '· not set, anyone with the link can take part';
+    $('joinedBox').hidden = !names.length;
+    $('joinedCount').textContent = `${joined.length} of ${names.length} joined`;
+    $('joinedList').innerHTML = joined.map((n) => `<span>✓ ${esc(n)} <button type="button" data-unlock="${esc(n)}" title="Let ${esc(n)} join from another phone">Unlock</button></span>`).join('');
   }
-  async function loadGuests() {
-    try { showGuests((await api('/api/guests').then((r) => r.json())).names); } catch (err) { $('guestStatus').textContent = '· ' + err.message; }
+  async function loadGuests(keepText) {
+    try { showGuests(await api('/api/guests').then((r) => r.json()), keepText); } catch (err) { $('guestStatus').textContent = '· ' + err.message; }
   }
+  $('joinedList').addEventListener('click', async (e) => {
+    const name = e.target.dataset?.unlock;
+    if (!name || !confirm(`Unlock ${name}? They can then join again from any phone.`)) return;
+    try {
+      showGuests(await api('/api/guests/unlock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }).then((r) => r.json()), true);
+    } catch (err) { $('guestSaved').textContent = "Couldn't unlock: " + err.message; }
+  });
   $('saveGuests').addEventListener('click', async () => {
     try {
       const res = await api('/api/guests', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: $('guestNames').value }) });
-      const { names } = await res.json();
-      showGuests(names);
-      $('guestSaved').textContent = `Saved ✓ (${names.length} names)`;
+      const info = await res.json();
+      showGuests(info);
+      $('guestSaved').textContent = `Saved ✓ (${info.names.length} guests)`;
     } catch (err) {
       $('guestSaved').textContent = "Couldn't save: " + err.message;
     }
@@ -244,6 +262,7 @@
       await render();
       $('loadErr').textContent = '';
       $('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+      loadGuests(true);
     } catch (err) {
       console.error(err);
       $('loadErr').textContent = `Couldn't load the requests: ${err.message === 'unauthorized' ? 'wrong password, reload the page and log in again' : err.message}.`;
