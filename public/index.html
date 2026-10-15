@@ -78,6 +78,9 @@
     .hint.err { color: var(--err); }
     .hint.ok { color: var(--ok); }
     #nameMsg:empty { display: none; }
+    fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+    fieldset:disabled { opacity: .45; }
+    .closed { margin: 0 0 16px; padding: 12px 14px; border-radius: 12px; background: var(--hover); font-weight: 600; text-align: center; }
     #name[readonly] { border-style: dashed; color: var(--muted); }
     form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
     label, .label { display: block; font-size: .85rem; font-weight: 600; margin: 18px 0 6px; color: var(--muted); }
@@ -137,6 +140,8 @@
   </div>
 
   <form id="f" autocomplete="off" novalidate>
+    <div class="closed" id="closedNote" hidden>🔒 Song requests open as soon as the hosts add the guest list. Check back soon!</div>
+    <fieldset id="formFields">
     <label for="name">Who are you?</label>
     <p class="hint tight">Type your <b>first name</b> or your <b>Instagram username</b>, so the hosts know who asked.</p>
     <input id="name" maxlength="60" placeholder="e.g. Stergios or @stergiosplakas" autocomplete="given-name" autocapitalize="words">
@@ -180,6 +185,7 @@
     <input class="hp" id="website" tabindex="-1" aria-hidden="true">
 
     <button class="submit" id="btn" type="submit">Send my list</button>
+    </fieldset>
     <div id="msg" role="status"></div>
   </form>
   <p class="count" id="count"></p>
@@ -216,6 +222,9 @@
   // ---------- settings from the server ----------
   const config = fetch('/api/config').then((r) => r.json()).catch(() => ({}));
   config.then((c) => {
+    // Until the hosts add the guest list nobody can take part: say so instead of a form that can't be sent.
+    $('closedNote').hidden = c.open !== false;
+    $('formFields').disabled = c.open === false;
     if (!c.eventName) return;
     document.querySelector('.event-name').textContent = c.eventName;
     document.title = 'Song Requests · ' + c.eventName;

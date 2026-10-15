@@ -54,6 +54,7 @@ export default {
       musicApi: env.MUSIC_API,
       deezerApi: env.DEEZER_API,
       maxPerGuestPerHour: Number(env.MAX_PER_GUEST_PER_HOUR) || undefined,
+      requireGuestList: env.REQUIRE_GUEST_LIST !== 'false',
     });
     return app(request, request.headers.get('CF-Connecting-IP') || '');
   },

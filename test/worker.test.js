@@ -24,12 +24,12 @@ function fakeD1() {
   };
 }
 
-const env = { DB: fakeD1(), ADMIN_KEY: 'k', EVENT_NAME: 'CF Party', MUSIC_COUNTRY: 'GR' };
+const env = { DB: fakeD1(), ADMIN_KEY: 'k', EVENT_NAME: 'CF Party', MUSIC_COUNTRY: 'GR', REQUIRE_GUEST_LIST: 'false' };
 const call = (p, opts = {}) => worker.fetch(new Request('https://song-requests.example.workers.dev' + p, opts), env);
 const adminCall = (p, opts = {}) => call(p, { ...opts, headers: { Authorization: 'Bearer k' } });
 
 test('worker: config, submit, list, export, delete on D1', async () => {
-  assert.deepStrictEqual(await (await call('/api/config')).json(), { eventName: 'CF Party', musicCountry: 'GR', musicApi: 'https://itunes.apple.com', deezerApi: 'https://api.deezer.com' });
+  assert.deepStrictEqual(await (await call('/api/config')).json(), { eventName: 'CF Party', musicCountry: 'GR', musicApi: 'https://itunes.apple.com', deezerApi: 'https://api.deezer.com', open: true });
 
   const track = { source: 'apple', id: '42', artist: 'Robyn', title: 'Dancing On My Own', album: 'Body Talk', artwork: '', durationMs: 280000, explicit: false, url: 'https://music.apple.com/x?i=42', previewUrl: '', clean: false, genre: '' };
   const submit = (body) => call('/api/requests', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

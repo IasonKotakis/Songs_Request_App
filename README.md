@@ -16,7 +16,7 @@ The DJ gets a dashboard where they can see every request and export the list to 
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
   - **Export .csv**: a spreadsheet with votes, who asked, album, length, notes and links.
   - delete spam or joke requests
-  - **👥 Guest list**: one guest per line, `Name, @instagram` (either part optional). Then only those guests can request and 👍: they type their first name or Instagram username (Greek or Greeklish, spelling-tolerant; a first name is enough if only one guest has it). The first phone a guest joins from is locked to them, so nobody else can use their name and a phone can't switch guests; the dashboard shows who joined and can unlock a guest. Empty = anyone with the link. The list lives in the app's database, not in this (public) repo.
+  - **👥 Guest list**: one guest per line, `Name, @instagram` (either part optional). Then only those guests can request and 👍: they type their first name or Instagram username (Greek or Greeklish, spelling-tolerant; a first name is enough if only one guest has it). The first phone a guest joins from is locked to them, so nobody else can use their name and a phone can't switch guests; the dashboard shows who joined and can unlock a guest. **Until a guest list is saved, nobody can request or vote** (the guest page says requests open soon). The list lives in the app's database, not in this (public) repo.
 
 Song search uses [Deezer's](https://developers.deezer.com/api) free public catalog, which needs no account or key and includes explicit versions and 30-second previews. If Deezer can't be reached, it falls back to Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api). (Apple's search is only the backup because since late 2025 it has been leaving explicit versions out of its results.) Each guest's phone searches directly, so a busy party never hits a per-address limit. Picked songs are stored with their official catalog names, which makes the `.txt` export match much better when you import it into a playlist.
 
@@ -72,6 +72,7 @@ To change something later (e.g. the party name), edit `wrangler.jsonc` and run `
 | `ADMIN_KEY` | `changeme` locally; must be set on Cloudflare | Password for the DJ dashboard and exports |
 | `EVENT_NAME` | `The Party` | Shown on the pages |
 | `MUSIC_COUNTRY` | `US` | Country catalog for the backup Apple search (two-letter code). Deezer uses the guest's own country automatically. |
+| `REQUIRE_GUEST_LIST` | `true` | Only guests on the dashboard's guest list can take part. `false` lets anyone with the link take part when no list is saved |
 | `MAX_PER_GUEST_PER_HOUR` | `60` | Basic spam limit: songs per hour from one IP address |
 | `PORT`, `DATA_DIR` | `3000`, `./data` | Node version only: port, and where `requests.json` is saved |
 

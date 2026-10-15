@@ -3,10 +3,12 @@ import assert from 'node:assert';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createApp } from '../src/app.js';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'songs-'));
 process.env.ADMIN_KEY = 'secret';
 process.env.EVENT_NAME = 'Test Party';
+process.env.REQUIRE_GUEST_LIST = 'false'; // most tests run open to anyone; the default (guest list required) is tested below
 let server, base;
 
 before(async () => {
@@ -241,4 +243,27 @@ test('with a guest list, only listed guests take part, by name or Instagram user
   // Clearing the list lets everyone in again.
   assert.deepStrictEqual((await (await put('')).json()).names, []);
   assert.deepStrictEqual(await join('Nikos', 'phone-nikos-1'), { ok: true, name: 'Nikos', locked: false });
+});
+
+test('by default nobody can take part until the hosts add a guest list, then only listed guests', async () => {
+  const settings = {};
+  const requests = [];
+  const store = {
+    list: async () => requests, add: async (e) => requests.push(e), remove: async () => false,
+    getSetting: async (k) => settings[k] ?? null, setSetting: async (k, v) => { settings[k] = v; },
+  };
+  const app = createApp({ store, adminKey: 'k' });
+  const call = (path, body, auth) => app(new Request('http://x' + path, body === undefined ? {} : {
+    method: path === '/api/guests' ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json', ...(auth ? { Authorization: 'Bearer k' } : {}) }, body: JSON.stringify(body) }), '1.2.3.4');
+  assert.strictEqual((await (await call('/api/config')).json()).open, false);
+  const closed = await (await call('/api/join', { name: 'Adonis', voter: 'phone-adonis-1' })).json();
+  assert.match(closed.error, /open as soon as the hosts add the guest list/);
+  assert.strictEqual((await call('/api/requests', { songs: [{ artist: 'A', title: 'B' }], name: 'Adonis', voter: 'phone-adonis-1' })).status, 403);
+
+  await call('/api/guests', { names: 'Stergios Plakas, @stergiosplakas\nJason, @jason_kotakis' }, true);
+  assert.strictEqual((await (await call('/api/config')).json()).open, true);
+  assert.match((await (await call('/api/join', { name: 'Adonis', voter: 'phone-adonis-1' })).json()).error, /isn't on the guest list/);
+  assert.strictEqual((await (await call('/api/join', { name: '@jason_kotakis', voter: 'phone-jason-1' })).json()).name, 'Jason');
+  assert.strictEqual((await call('/api/requests', { songs: [{ artist: 'A', title: 'B' }], name: 'Adonis', voter: 'phone-adonis-1' })).status, 403);
+  assert.strictEqual((await call('/api/requests', { songs: [{ artist: 'A', title: 'B' }], name: 'Jason', voter: 'phone-jason-1' })).status, 201);
 });

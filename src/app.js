@@ -118,15 +118,17 @@ async function loadGuests(store) {
 // Which phone each guest joined from: { "Stergios Plakas": "<device id>" }.
 const loadClaims = async (store) => loadSetting(store, 'claims', {});
 
-// Who's taking part. Without a guest list anyone can, under the name they give.
-// With one, the guest must be on it, and the first phone a guest joins from is locked to them:
+// Who's taking part. Normally only guests on the guest list (requireGuestList); until the hosts add one,
+// nobody can request or vote. With requireGuestList off and no list, anyone can, under the name they give.
+// A guest must be on the list, and the first phone a guest joins from is locked to them:
 // nobody else can use that guest, and that phone can't switch to another guest (the DJ can unlock).
 // Returns { name } (as written on the list) or { error, status }.
-async function checkGuest(store, rawName, voter, { required = true } = {}) {
+async function checkGuest(store, rawName, voter, { required = true, requireGuestList = true } = {}) {
   const name = cleanName(rawName);
   const typed = clean(rawName, 60);
   const guests = await loadGuests(store);
   if (!guests.length) {
+    if (requireGuestList) return { error: NOT_OPEN_YET, status: 403 };
     if (!name && required) return { error: 'Please add your name first (in Latin letters, e.g. Stergios).', status: 400 };
     return { name };
   }
@@ -235,7 +237,9 @@ const text = (body, type, headers = {}) => new Response(body, { headers: { 'Cont
 const MAX_SONGS_PER_SEND = 30;
 const MAX_BODY = 64_000;
 
-export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', deezerApi = 'https://api.deezer.com', maxPerGuestPerHour = 60 }) {
+const NOT_OPEN_YET = "Song requests open as soon as the hosts add the guest list. Check back soon!";
+
+export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', deezerApi = 'https://api.deezer.com', maxPerGuestPerHour = 60, requireGuestList = true }) {
   const submitBuckets = new Map();
   const checkBuckets = new Map();
   const config = { eventName, musicCountry, musicApi, deezerApi };
@@ -246,7 +250,10 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
     const method = request.method;
 
     if (method === 'GET' && pathname === '/health') return json({ ok: true });
-    if (method === 'GET' && pathname === '/api/config') return json(config);
+    // `open`: whether guests can take part yet (false until the hosts add the guest list).
+    if (method === 'GET' && pathname === '/api/config') {
+      return json({ ...config, open: !requireGuestList || (await loadGuests(store)).length > 0 });
+    }
 
     // A guest says who they are (name or Instagram username) from their phone: { name, voter }.
     // Answers { ok, name, locked } or { ok: false, error }. With a guest list this locks the phone to the guest.
@@ -254,7 +261,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       if (rateLimited(checkBuckets, ip, 60, 600_000)) return json({ ok: false, error: 'Too many tries, wait a few minutes.' }, 429);
       let body;
       try { body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}'); } catch { return json({ ok: false, error: 'Invalid JSON' }, 400); }
-      const guest = await checkGuest(store, body.name, cleanVoter(body.voter));
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { requireGuestList });
       const locked = (await loadGuests(store)).length > 0;
       return json(guest.error ? { ok: false, error: guest.error } : { ok: true, name: guest.name, locked });
     }
@@ -275,7 +282,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       const songs = Array.isArray(body.songs) ? body.songs : [body];
       if (songs.length === 0) return json({ error: 'Add at least one song.' }, 400);
       if (songs.length > MAX_SONGS_PER_SEND) return json({ error: `You can send up to ${MAX_SONGS_PER_SEND} songs at a time.` }, 400);
-      const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { required: false });
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { required: false, requireGuestList });
       if (guest.error) return json({ error: guest.error }, guest.status);
       const name = guest.name;
       const note = clean(body.note, 200);
@@ -351,7 +358,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
         return json({ ok: true, count: song.count - mine.length });
       }
       if (mine.length) return json({ ok: true, count: song.count, already: true });
-      const guest = await checkGuest(store, body.name, cleanVoter(body.voter));
+      const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { requireGuestList });
       if (guest.error) return json({ error: guest.error }, guest.status);
       const name = guest.name;
       if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {

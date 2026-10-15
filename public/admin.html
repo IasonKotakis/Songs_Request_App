@@ -43,7 +43,8 @@
     .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; flex: none; padding: 0; font-size: .8rem; }
     .play.playing { background: var(--accent); color: #fff; }
     textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: .95rem; background: var(--field); color: var(--text); resize: vertical; }
-    summary { cursor: pointer; }
+    summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+    .warn { margin: 8px 0; padding: 10px 12px; border-radius: 10px; background: #3a2a10; color: #ffc46b; font-size: .9rem; }
     .joined { display: flex; flex-wrap: wrap; gap: 6px; }
     .joined span { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: .85rem; }
     .joined button { padding: 2px 8px; font-size: .75rem; border-radius: 999px; background: transparent; color: var(--muted); border-color: var(--line); }
@@ -109,12 +110,19 @@
     </section>
 
     <section class="card">
+      <h3 style="margin: 0 0 6px">👥 Guest list <span class="small muted" id="guestStatus"></span></h3>
+      <p class="small">
+        <b>Why?</b> The QR code and link can be forwarded to anyone. The guest list makes sure that <b>only your invited friends</b>
+        can request songs and 👍, each under their own name and from one phone each, so the votes you see are real.
+        Guests who aren't on it are turned away.
+      </p>
+      <p class="warn" id="guestWarn" hidden>⚠️ No guest list yet, so <b>nobody can request songs</b>. Paste the list below and press <b>Save guest list</b> to open requests.</p>
       <details id="guestBox">
-        <summary><b>👥 Guest list</b> <span class="small muted" id="guestStatus"></span></summary>
-        <p class="small muted">One guest per line: <b>Name, @instagram</b> (either part is optional). Then only these guests can request songs and 👍.
+        <summary>Edit the list and see who joined</summary>
+        <p class="small muted">One guest per line: <b>Name, @instagram</b> (either part is optional).
           Guests type their first name or their Instagram username. Names can be in Greek or Greeklish and spelled a little differently
           (Angelos / Aggelos, Christos / Xristos); a first name is enough if only one guest has it.
-          The first phone a guest joins from is locked to them, so nobody else can use their name. Leave the list empty to let anyone with the link take part.</p>
+          The first phone a guest joins from is locked to them, so nobody else can use their name.</p>
         <textarea id="guestNames" rows="10" placeholder="Stergios Plakas, @stergiosplakas&#10;Jim Patmanidis, @jimpatman&#10;@tolarazz"></textarea>
         <div class="row" style="margin-top: 10px">
           <button type="button" id="saveGuests">Save guest list</button>
@@ -203,7 +211,9 @@
   // ---------- guest list ----------
   function showGuests({ names, joined = [] }, keepText) {
     if (!keepText) $('guestNames').value = names.join('\n');
-    $('guestStatus').textContent = names.length ? `· ${names.length} guests, ${joined.length} joined` : '· not set, anyone with the link can take part';
+    $('guestStatus').textContent = names.length ? `· ${names.length} guests, ${joined.length} joined` : '· not set yet';
+    $('guestWarn').hidden = names.length > 0;
+    if (!names.length) $('guestBox').open = true;   // nothing works without it: show the box
     $('joinedBox').hidden = !names.length;
     $('joinedCount').textContent = `${joined.length} of ${names.length} joined`;
     $('joinedList').innerHTML = joined.map((n) => `<span>✓ ${esc(n)} <button type="button" data-unlock="${esc(n)}" title="Let ${esc(n)} join from another phone">Unlock</button></span>`).join('');

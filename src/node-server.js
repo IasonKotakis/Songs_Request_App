@@ -66,6 +66,8 @@ const app = createApp({
   musicApi: process.env.MUSIC_API,
   deezerApi: process.env.DEEZER_API,
   maxPerGuestPerHour: Number(process.env.MAX_PER_GUEST_PER_HOUR) || undefined,
+  // Only guests on the guest list can take part; REQUIRE_GUEST_LIST=false opens it to anyone with the link.
+  requireGuestList: process.env.REQUIRE_GUEST_LIST !== 'false',
 });
 
 // The pages in public/ (on Cloudflare these are served as static assets).
