@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "song-requests",
-      // Paste the id printed by `npm run cf:create-db` here.
+      // Filled in automatically by deploy-cloudflare (into wrangler.deploy.jsonc, not this file).
       "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }

@@ -45,21 +45,22 @@ From then on, double-click `start-windows.bat` in `Documents\Songs_Request_App`.
 
 ## Put it online for free with Cloudflare
 
-This runs on Cloudflare Workers with a D1 database. A party's worth of traffic stays well inside the free plan. You don't need a domain: Cloudflare gives you a free address like `https://song-requests.<your-name>.workers.dev`.
+This runs on Cloudflare Workers with a D1 database. A party's worth of traffic stays well inside the free plan, and you get a free address like `https://song-requests.<your-name>.workers.dev` (no domain needed).
 
-One-time setup, in a terminal in this folder:
+**Windows:** double-click **`deploy-cloudflare.bat`**. **Mac / Linux:** `npm install`, then `npm run cf:deploy`.
 
-1. `npm install`: installs Cloudflare's `wrangler` tool.
-2. `npm run cf:login`: opens your browser to log in to (or sign up for) a free Cloudflare account.
-3. `npm run cf:create-db`: creates the database and prints a `database_id`. Copy it into `wrangler.jsonc`, replacing the `00000000-…` placeholder.
-4. In `wrangler.jsonc`, set `EVENT_NAME` to your party's name. Optionally set `MUSIC_COUNTRY` (e.g. `GR`, `GB`), the country for the backup Apple search.
-5. `npm run cf:migrate`: creates the table in the database.
-6. `npm run cf:deploy`: puts the app online and prints its address.
-7. `npm run cf:password`: sets your dashboard password (it asks you to type it). Until you do this the site shows an error, which is on purpose.
+It does everything in order and only stops when Cloudflare needs you:
+1. **Log in**: a browser window opens; log in to (or sign up for) a free Cloudflare account and press *Allow*.
+2. **Database**: creates the free `song-requests` database the first time.
+3. **Database tables**: type `y` and Enter if asked.
+4. **Put online**: the first time, Cloudflare may ask you to pick a *workers.dev subdomain* (a short name that becomes part of your link).
+5. **Dashboard password** (first time only): type the password you want for `/admin`. Change it later with `npm run cf:password`.
 
-Then open `https://<your-address>/admin`, log in, and print or share the QR code.
+Then open `https://<your-address>/admin`, log in, **paste the guest list and press Save** (nobody can request songs until you do), and share the QR code.
 
-To change something later (e.g. the party name), edit `wrangler.jsonc` and run `npm run cf:deploy` again. Requests are kept.
+To publish later changes, run it again: it fetches the latest version and redeploys. Requests, votes and the guest list are kept.
+
+Your database id and settings go into `wrangler.deploy.jsonc` and `.cloudflare-state.json` on your computer, which aren't part of the repo.
 
 **Try the Cloudflare version locally:** create a file called `.dev.vars` containing `ADMIN_KEY=changeme`, then run `npm run cf:dev` and open http://localhost:8787.
 
@@ -76,7 +77,7 @@ To change something later (e.g. the party name), edit `wrangler.jsonc` and run `
 | `MAX_PER_GUEST_PER_HOUR` | `60` | Basic spam limit: songs per hour from one IP address |
 | `PORT`, `DATA_DIR` | `3000`, `./data` | Node version only: port, and where `requests.json` is saved |
 
-On Cloudflare, `ADMIN_KEY` is a secret (`npm run cf:password`) and the rest go under `vars` in `wrangler.jsonc`. Locally, they are environment variables, e.g. `ADMIN_KEY=secret EVENT_NAME="My Party" npm start`.
+On Cloudflare, `ADMIN_KEY` is a secret (set by the deploy script, or `npm run cf:password`) and the rest go under `vars` in `wrangler.jsonc`. Locally, they are environment variables, e.g. `ADMIN_KEY=secret EVENT_NAME="My Party" npm start`.
 
 ## How it's built
 
@@ -84,6 +85,7 @@ On Cloudflare, `ADMIN_KEY` is a secret (`npm run cf:password`) and the rest go u
 - `worker.js`: Cloudflare version (stores requests in D1, schema in `migrations/`)
 - `server.js` + `src/node-server.js`: Node version for local testing or any Docker host (stores requests in `data/requests.json`)
 - `start-windows.bat`: double-click starter for Windows
+- `deploy-cloudflare.bat` + `tools/deploy-cloudflare.mjs`: put the app online on Cloudflare, or publish changes
 - `public/`: the guest page and the dashboard
 - `npm test` runs the tests for both versions
 

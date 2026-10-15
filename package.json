@@ -7,12 +7,9 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
-    "cf:dev": "wrangler d1 migrations apply song-requests --local && wrangler dev",
-    "cf:login": "wrangler login",
-    "cf:create-db": "wrangler d1 create song-requests",
-    "cf:migrate": "wrangler d1 migrations apply song-requests --remote",
-    "cf:password": "wrangler secret put ADMIN_KEY",
-    "cf:deploy": "wrangler deploy"
+    "cf:deploy": "node tools/deploy-cloudflare.mjs",
+    "cf:password": "wrangler secret put ADMIN_KEY -c wrangler.deploy.jsonc",
+    "cf:dev": "wrangler d1 migrations apply song-requests --local && wrangler dev"
   },
   "engines": {
     "node": ">=22"

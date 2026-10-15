@@ -3,3 +3,6 @@ data/
 .env
 .dev.vars
 .wrangler/
+# Cloudflare settings for this computer (database id, password set), made by deploy-cloudflare
+wrangler.deploy.jsonc
+.cloudflare-state.json
