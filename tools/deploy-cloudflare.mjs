@@ -32,6 +32,14 @@ function stop(message) {
 }
 
 function main() {
+  // Cloudflare's tool (wrangler) needs Node.js 22 or newer.
+  const nodeMajor = Number(process.versions.node.split('.')[0]);
+  if (nodeMajor < 22) {
+    stop(`Cloudflare's tool needs Node.js 22 or newer, and this computer has ${process.versions.node}.
+  1. Download the "LTS" version from https://nodejs.org and install it (it replaces the old one).
+  2. Restart your computer.
+  3. Run this again.`);
+  }
   if (!fs.existsSync(WRANGLER)) stop('Cloudflare\'s tool isn\'t installed yet. Run "npm install" in this folder first.');
   const state = fs.existsSync(STATE_FILE) ? JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) : {};
   const saveState = () => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
