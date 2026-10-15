@@ -16,6 +16,7 @@ function fakeD1() {
       const stmt = {
         bind: (...p) => ((params = p), stmt),
         all: async () => ({ results: db.prepare(sql).all(...params) }),
+        first: async () => db.prepare(sql).get(...params) ?? null,
         run: async () => ({ meta: { changes: Number(db.prepare(sql).run(...params).changes) } }),
       };
       return stmt;
@@ -65,4 +66,12 @@ test('worker: votes are stored with the device id on D1', async () => {
   assert.strictEqual((await (await send('/api/votes', { key, voter: 'device-bo-1234', name: 'Bo' })).json()).already, true);
   const mine = (await (await call('/api/public/songs?voter=device-bo-1234')).json()).find((s) => s.key === key);
   assert.strictEqual(mine.mine, true);
+});
+
+test('worker: the guest list is stored in D1 settings', async () => {
+  const put = await call('/api/guests', { method: 'PUT', headers: { Authorization: 'Bearer k', 'Content-Type': 'application/json' }, body: JSON.stringify({ names: ['Jim', 'Stergios'] }) });
+  assert.deepStrictEqual((await put.json()).names, ['Jim', 'Stergios']);
+  assert.deepStrictEqual(await (await adminCall('/api/guests')).json(), { names: ['Jim', 'Stergios'] });
+  assert.deepStrictEqual(await (await call('/api/guest-check?name=jimmy')).json(), { ok: false, error: 'Sorry, "jimmy" isn\'t on the guest list. Use your name as the hosts know it, in Latin letters.' });
+  assert.deepStrictEqual(await (await call('/api/guest-check?name=%CE%A3%CF%84%CE%AD%CF%81%CE%B3%CE%B9%CE%BF%CF%82')).json(), { ok: true, name: 'Stergios' });
 });

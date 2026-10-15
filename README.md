@@ -16,6 +16,7 @@ The DJ gets a dashboard where they can see every request and export the list to 
   - **Export .txt**: one `Artist - Title` per line. Paste it into [TuneMyMusic](https://www.tunemymusic.com/) or [Soundiiz](https://soundiiz.com/) to turn it into a Spotify / Apple Music / Tidal playlist in one step.
   - **Export .csv**: a spreadsheet with votes, who asked, album, length, notes and links.
   - delete spam or joke requests
+  - **👥 Guest list**: paste the guests' names (one per line) and only they can request and 👍. Matching is spelling-tolerant (Greek or Greeklish, Angelos / Aggelos, Christos / Xristos, a unique first name is enough) and requests are saved under the name as written on the list. Empty = anyone with the link. The list is stored in the app's database, not in this (public) repo.
 
 Song search uses [Deezer's](https://developers.deezer.com/api) free public catalog, which needs no account or key and includes explicit versions and 30-second previews. If Deezer can't be reached, it falls back to Apple's free [iTunes Search API](https://performance-partners.apple.com/search-api). (Apple's search is only the backup because since late 2025 it has been leaving explicit versions out of its results.) Each guest's phone searches directly, so a busy party never hits a per-address limit. Picked songs are stored with their official catalog names, which makes the `.txt` export match much better when you import it into a playlist.
 

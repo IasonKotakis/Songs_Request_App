@@ -10,6 +10,16 @@ import { createApp } from './app.js';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'requests.json');
+const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+
+function readSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return {};
+    throw err;
+  }
+}
 
 // Requests are kept in memory and saved to a JSON file.
 function fileStore() {
@@ -36,6 +46,14 @@ function fileStore() {
       if (requests.length === before) return false;
       save();
       return true;
+    },
+    // Settings (e.g. the guest list) live in their own small file.
+    getSetting: async (key) => readSettings()[key] ?? null,
+    setSetting: async (key, value) => {
+      const settings = { ...readSettings(), [key]: value };
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+      fs.writeFileSync(SETTINGS_FILE + '.tmp', JSON.stringify(settings, null, 2));
+      fs.renameSync(SETTINGS_FILE + '.tmp', SETTINGS_FILE);
     },
   };
 }

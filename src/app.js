@@ -61,6 +61,54 @@ export const songKey = (artist, title) => normalize(artist) + '|' + normalize(ti
 // Guest names are kept in Greeklish (Latin letters), e.g. "Στέργιος" → "Stergios".
 const cleanName = (value) => toGreeklish(clean(value, 60)).replace(/[^A-Za-z .'-]/g, '').replace(/\s+/g, ' ').trim();
 
+// ---------- guest list ----------
+// The DJ can paste the guest list into the dashboard; then only those guests can request and 👍.
+// Names are compared loosely, since Greeklish is spelled many ways:
+// Aggelos = Angelos, Xristos = Christos, Kostas = Costas, Anny = Ani, Giwrgos = Giorgos.
+export function nameKey(name) {
+  const word = (w) => w
+    .replace(/ks/g, 'x').replace(/x/g, 'ch').replace(/c(?!h)/g, 'k').replace(/ph/g, 'f').replace(/w/g, 'o')
+    .replace(/mp/g, 'b').replace(/nt/g, 'd').replace(/y/g, 'i').replace(/(?<![ctp])h/g, 'i')
+    .replace(/(.)\1+/g, '$1').replace(/ng/g, 'g');
+  return toGreeklish(String(name || '')).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .split(/[^a-z]+/).filter(Boolean).map(word).join(' ');
+}
+
+// Finds the guest on the list: the full name, or just a first name if only one guest has it.
+// Returns { name } as written on the list, { ambiguous: true }, or null.
+export function findGuest(name, guests) {
+  const key = nameKey(name);
+  if (!key) return null;
+  const full = guests.find((g) => nameKey(g) === key);
+  if (full) return { name: full };
+  const first = key.split(' ')[0];   // a unique first name is enough, even with a misspelt surname
+  const byFirst = guests.filter((g) => nameKey(g).split(' ')[0] === first);
+  if (byFirst.length === 1) return { name: byFirst[0] };
+  return byFirst.length > 1 ? { ambiguous: true } : null;
+}
+
+async function loadGuests(store) {
+  try {
+    const names = JSON.parse((await store.getSetting?.('guests')) || '[]');
+    return Array.isArray(names) ? names : [];
+  } catch {
+    return [];
+  }
+}
+
+// The name to store for a guest, or an error response if they're not on the guest list.
+// (The guest page always asks for a name; the server insists on one for votes and once there's a guest list.)
+async function checkGuest(store, rawName, { required = true } = {}) {
+  const name = cleanName(rawName);
+  const guests = await loadGuests(store);
+  if (!name && (required || guests.length)) return { error: 'Please add your name first (in Latin letters, e.g. Stergios).', status: 400 };
+  if (!guests.length) return { name };            // no guest list: everyone's welcome
+  const found = findGuest(name, guests);
+  if (found?.name) return { name: found.name };
+  if (found?.ambiguous) return { error: `There's more than one ${name} on the guest list. Please add your surname too.`, status: 403 };
+  return { error: `Sorry, "${name}" isn't on the guest list. Use your name as the hosts know it, in Latin letters.`, status: 403 };
+}
+
 // A guest's device id (random, kept on their phone), used so each guest counts once per song.
 const cleanVoter = (v) => (typeof v === 'string' && /^[\w-]{8,64}$/.test(v) ? v : '');
 
@@ -150,6 +198,7 @@ const MAX_BODY = 64_000;
 
 export function createApp({ store, adminKey, eventName = 'The Party', musicCountry = 'US', musicApi = 'https://itunes.apple.com', deezerApi = 'https://api.deezer.com', maxPerGuestPerHour = 60 }) {
   const submitBuckets = new Map();
+  const checkBuckets = new Map();
   const config = { eventName, musicCountry, musicApi, deezerApi };
 
   return async function handle(request, ip = '') {
@@ -159,6 +208,13 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
 
     if (method === 'GET' && pathname === '/health') return json({ ok: true });
     if (method === 'GET' && pathname === '/api/config') return json(config);
+
+    // The guest page checks a name as it's typed: { ok, name } or { ok: false, error }.
+    if (method === 'GET' && pathname === '/api/guest-check') {
+      if (rateLimited(checkBuckets, ip, 60, 600_000)) return json({ ok: false, error: 'Too many tries, wait a few minutes.' }, 429);
+      const guest = await checkGuest(store, url.searchParams.get('name'));
+      return json(guest.error ? { ok: false, error: guest.error } : { ok: true, name: guest.name });
+    }
 
     if (method === 'POST' && pathname === '/api/requests') {
       const raw = await request.text();
@@ -176,7 +232,9 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       const songs = Array.isArray(body.songs) ? body.songs : [body];
       if (songs.length === 0) return json({ error: 'Add at least one song.' }, 400);
       if (songs.length > MAX_SONGS_PER_SEND) return json({ error: `You can send up to ${MAX_SONGS_PER_SEND} songs at a time.` }, 400);
-      const name = cleanName(body.name);
+      const guest = await checkGuest(store, body.name, { required: false });
+      if (guest.error) return json({ error: guest.error }, guest.status);
+      const name = guest.name;
       const note = clean(body.note, 200);
       const voter = cleanVoter(body.voter);
       let entries = songs.map((song) => {
@@ -250,8 +308,9 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
         return json({ ok: true, count: song.count - mine.length });
       }
       if (mine.length) return json({ ok: true, count: song.count, already: true });
-      const name = cleanName(body.name);
-      if (!name) return json({ error: 'Please add your name first (in Latin letters, e.g. Stergios).' }, 400);
+      const guest = await checkGuest(store, body.name);
+      if (guest.error) return json({ error: guest.error }, guest.status);
+      const name = guest.name;
       if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {
         return json({ error: 'Whoa, that is a lot of songs! Try again later.' }, 429);
       }
@@ -260,12 +319,29 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
     }
 
     // Everything below is admin-only.
-    const adminRoutes = ['/api/requests', '/api/songs', '/export.csv', '/export.txt', '/export.json'];
+    const adminRoutes = ['/api/requests', '/api/songs', '/api/guests', '/export.csv', '/export.txt', '/export.json'];
     if (adminRoutes.includes(pathname) || pathname.startsWith('/api/requests/')) {
       const header = request.headers.get('authorization') || '';
       const provided = header.startsWith('Bearer ') ? header.slice(7) : url.searchParams.get('key') || '';
       if (!(await keyMatches(provided, adminKey))) return json({ error: 'Wrong admin key.' }, 401);
 
+      // The guest list (one name per entry). An empty list lets everyone in.
+      if (pathname === '/api/guests') {
+        if (method === 'GET') return json({ names: await loadGuests(store) });
+        if (method === 'PUT') {
+          let body;
+          try { body = JSON.parse((await request.text()).slice(0, MAX_BODY) || '{}'); } catch { return json({ error: 'Invalid JSON' }, 400); }
+          const list = Array.isArray(body.names) ? body.names : String(body.names || '').split(/[\n,;]+/);
+          const names = [];
+          for (const raw of list) {
+            const n = toGreeklish(clean(String(raw), 60)).replace(/\s+/g, ' ').trim();
+            if (n && !names.some((x) => nameKey(x) === nameKey(n))) names.push(n);
+          }
+          if (names.length > 500) return json({ error: 'That is a lot of guests! Up to 500 names.' }, 400);
+          await store.setSetting('guests', JSON.stringify(names));
+          return json({ names });
+        }
+      }
       if (method === 'DELETE' && pathname.startsWith('/api/requests/')) {
         const id = decodeURIComponent(pathname.slice('/api/requests/'.length));
         return (await store.remove(id)) ? json({ ok: true }) : json({ error: 'Not found' }, 404);

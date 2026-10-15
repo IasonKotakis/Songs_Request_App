@@ -203,3 +203,29 @@ test('guest names are stored in Greeklish', async () => {
   assert.deepStrictEqual(song.requestedBy, ['Stergios', 'Aggelos']);
   assert.strictEqual((await vote({ key, voter: 'device-greek-3', name: '🎉🎉' })).status, 400);
 });
+
+test('with a guest list, only listed guests can request and vote, matched loosely and saved as listed', async () => {
+  const put = (names) => fetch(base + '/api/guests', { method: 'PUT', headers: { Authorization: 'Bearer secret', 'Content-Type': 'application/json' }, body: JSON.stringify({ names }) });
+  assert.strictEqual((await fetch(base + '/api/guests', { method: 'PUT', body: '{}' })).status, 401);
+  const saved = await (await put('Stergios Papadopoulos\nJim\nΆγγελος\nMaria A\nMaria B\njim')).json();
+  assert.deepStrictEqual(saved.names, ['Stergios Papadopoulos', 'Jim', 'Aggelos', 'Maria A', 'Maria B']);
+
+  const check = async (name) => (await fetch(base + '/api/guest-check?name=' + encodeURIComponent(name))).json();
+  assert.deepStrictEqual(await check('Στέργιος'), { ok: true, name: 'Stergios Papadopoulos' });
+  assert.deepStrictEqual(await check('angelos'), { ok: true, name: 'Aggelos' });
+  assert.match((await check('Maria')).error, /surname/);
+  assert.match((await check('Nikos')).error, /isn't on the guest list/);
+
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'Nikos', voter: 'device-nikos-1' })).status, 403);
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], voter: 'device-anon-1' })).status, 400);
+  assert.strictEqual((await post({ songs: [{ artist: 'Abba', title: 'Waterloo' }], name: 'stergios', voter: 'device-sterg-1' })).status, 201);
+  const key = (await publicSongs()).find((s) => s.title === 'Waterloo').key;
+  assert.strictEqual((await vote({ key, voter: 'device-nikos-1', name: 'Nikos' })).status, 403);
+  assert.strictEqual((await vote({ key, voter: 'device-maria-b', name: 'maria b' })).status, 201);
+  const song = (await (await admin('/api/songs')).json()).find((s) => s.title === 'Waterloo');
+  assert.deepStrictEqual(song.requestedBy, ['Stergios Papadopoulos', 'Maria B']);
+
+  // Clearing the list lets everyone in again.
+  assert.deepStrictEqual((await (await put('')).json()).names, []);
+  assert.deepStrictEqual(await check('Nikos'), { ok: true, name: 'Nikos' });
+});

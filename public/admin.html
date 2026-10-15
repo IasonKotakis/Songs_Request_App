@@ -42,6 +42,8 @@
     .manual { font-size: .75rem; color: #ffc46b; background: #3a2a10; border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
     .play { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--accent); background: transparent; color: var(--accent); cursor: pointer; flex: none; padding: 0; font-size: .8rem; }
     .play.playing { background: var(--accent); color: #fff; }
+    textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-size: .95rem; background: var(--field); color: var(--text); resize: vertical; }
+    summary { cursor: pointer; }
     .tag { font-size: .7rem; font-weight: 700; border: 1px solid var(--muted); color: var(--muted); border-radius: 3px; padding: 0 4px; }
     .badge { background: var(--badge); color: var(--accent); border-radius: 999px; padding: 2px 9px; font-weight: 700; font-size: .85rem; }
     .small { font-size: .85rem; }
@@ -104,6 +106,20 @@
     </section>
 
     <section class="card">
+      <details id="guestBox">
+        <summary><b>👥 Guest list</b> <span class="small muted" id="guestStatus"></span></summary>
+        <p class="small muted">Paste the guests' names, one per line. Then only they can request songs and 👍. Names can be in Greek or Greeklish,
+          and guests can type them a little differently (Angelos / Aggelos, Christos / Xristos); a first name alone is enough if only one guest has it.
+          Leave it empty to let anyone with the link take part.</p>
+        <textarea id="guestNames" rows="8" placeholder="Stergios&#10;Jim&#10;Anny&#10;Maria A&#10;Maria B"></textarea>
+        <div class="row" style="margin-top: 10px">
+          <button type="button" id="saveGuests">Save guest list</button>
+          <span class="small muted" id="guestSaved"></span>
+        </div>
+      </details>
+    </section>
+
+    <section class="card">
       <div class="tabs">
         <button id="tabSongs" class="on" type="button">Songs (grouped)</button>
         <button id="tabAll" type="button">All requests</button>
@@ -151,6 +167,7 @@
       try { sessionStorage.setItem('adminKey', key); } catch {}
       $('login').hidden = true; $('app').hidden = false;
       setup();
+      loadGuests();
       load();
     } catch (e) {
       $('loginErr').textContent = e.message === 'unauthorized' ? 'Wrong admin key.' : e.message;
@@ -174,6 +191,25 @@
     }
     updateExports();
   }
+
+  // ---------- guest list ----------
+  function showGuests(names) {
+    $('guestNames').value = names.join('\n');
+    $('guestStatus').textContent = names.length ? `· ${names.length} guests, only they can take part` : '· not set, anyone with the link can take part';
+  }
+  async function loadGuests() {
+    try { showGuests((await api('/api/guests').then((r) => r.json())).names); } catch (err) { $('guestStatus').textContent = '· ' + err.message; }
+  }
+  $('saveGuests').addEventListener('click', async () => {
+    try {
+      const res = await api('/api/guests', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ names: $('guestNames').value }) });
+      const { names } = await res.json();
+      showGuests(names);
+      $('guestSaved').textContent = `Saved ✓ (${names.length} names)`;
+    } catch (err) {
+      $('guestSaved').textContent = "Couldn't save: " + err.message;
+    }
+  });
 
   // ---------- genre filter: the list and the exports show one genre at a time ----------
   let genreFilter = '';

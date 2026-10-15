@@ -76,6 +76,8 @@
     .ask b { flex: 1 1 100%; }
     #reqMsg { min-height: 1.2em; }
     .hint.err { color: var(--err); }
+    .hint.ok { color: var(--ok); }
+    #nameMsg:empty { display: none; }
     form { background: var(--card); border-radius: 18px; padding: 20px; box-shadow: 0 10px 40px rgba(0,0,0,.25); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
     label, .label { display: block; font-size: .85rem; font-weight: 600; margin: 18px 0 6px; color: var(--muted); }
     label:first-child { margin-top: 0; }
@@ -136,6 +138,7 @@
   <form id="f" autocomplete="off" novalidate>
     <label for="name">Your name</label>
     <input id="name" maxlength="60" placeholder="In Latin letters, e.g. Stergios" autocomplete="given-name">
+    <div id="nameMsg" class="hint" role="status"></div>
 
     <!-- What everyone has asked for so far: 👍 instead of requesting a song again. -->
     <div id="requestedBox" hidden>
@@ -534,9 +537,27 @@
     }
     return name;
   }
-  $('name').addEventListener('blur', () => {
+  // Check the name with the server (and the hosts' guest list, if they set one).
+  async function checkGuestName() {
     if (window.greeklish) $('name').value = window.greeklish.toGreeklish($('name').value).trim();
-  });
+    const typed = $('name').value.trim();
+    if (!typed) { $('nameMsg').textContent = ''; return; }
+    try {
+      const res = await fetch('/api/guest-check?name=' + encodeURIComponent(typed)).then((r) => r.json());
+      if ($('name').value.trim() !== typed) return; // they kept typing
+      if (res.ok) {
+        $('name').value = res.name;                   // as written on the guest list
+        try { localStorage.setItem('guestName', res.name); } catch {}
+        $('nameMsg').className = 'hint ok';
+        $('nameMsg').textContent = `👋 Hi ${res.name.split(' ')[0]}!`;
+      } else {
+        $('nameMsg').className = 'hint err';
+        $('nameMsg').textContent = res.error;
+      }
+    } catch { /* offline: the server checks again when they send */ }
+  }
+  $('name').addEventListener('change', checkGuestName);
+  if ($('name').value) checkGuestName();
 
   // ---------- already requested: see what's on the list, 👍 instead of requesting again ----------
   // A random id kept on this phone, so each guest counts once per song.

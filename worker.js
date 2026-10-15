@@ -29,6 +29,13 @@ function d1Store(db) {
       const result = await db.prepare('DELETE FROM requests WHERE id = ?1').bind(id).run();
       return result.meta.changes > 0;
     },
+    async getSetting(key) {
+      const row = await db.prepare('SELECT value FROM settings WHERE key = ?1').bind(key).first();
+      return row ? row.value : null;
+    },
+    async setSetting(key, value) {
+      await db.prepare('INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value').bind(key, value).run();
+    },
   };
 }
 
