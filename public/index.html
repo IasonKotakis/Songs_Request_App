@@ -57,6 +57,15 @@
     #requested { max-height: 480px; overflow-y: auto; }
     .rank { flex: none; width: 26px; text-align: center; font-weight: 700; color: var(--muted); font-size: .95rem; }
     .rank.medal { font-size: 1.25rem; }
+    #requested li.flash { animation: flash 1.8s ease-out; }
+    @keyframes flash { 0%, 35% { background: color-mix(in srgb, var(--accent2) 35%, transparent); } 100% { background: transparent; } }
+    dialog { border: 1px solid var(--line); border-radius: 18px; padding: 20px; width: min(92vw, 380px); background: var(--field); color: var(--text);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+    dialog::backdrop { background: rgba(0, 0, 0, .5); }
+    .vd-song { display: flex; gap: 12px; align-items: center; }
+    .vd-song .art { width: 56px; height: 56px; }
+    #vdText { margin: 14px 0 16px; line-height: 1.45; }
+    .vd-actions { display: flex; gap: 16px; align-items: center; }
     #requested:empty { display: none; }
     .vote { flex: none; display: flex; align-items: center; gap: 5px; height: 38px; padding: 0 12px; border-radius: 19px; border: 1px solid var(--line);
       background: transparent; color: var(--text); font-size: .95rem; cursor: pointer; }
@@ -171,6 +180,16 @@
   <p class="count" id="count"></p>
 
 </main>
+
+<!-- Asked when a guest adds a song that's already on the list: 👍 it instead. -->
+<dialog id="voteDialog" aria-labelledby="vdTitle">
+  <div class="vd-song"><span id="vdCover"></span><div class="meta"><b id="vdTitle"></b><span id="vdArtist"></span></div></div>
+  <p id="vdText"></p>
+  <div class="vd-actions">
+    <button type="button" class="small" id="vdYes">👍 Add my vote</button>
+    <button type="button" class="link" id="vdNo">Cancel</button>
+  </div>
+</dialog>
 <script>
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -361,8 +380,7 @@
     const key = trackKey(t);
     const req = requestedByKey.get(serverKey(t.artist, t.title));
     if (inList(key)) removeFromList(key);
-    else if (req?.mine) { msg.className = 'ok'; msg.textContent = `You already asked for "${t.title}" 👍`; }
-    else if (req) return vote(req.key, msg);      // already on the list: tapping it counts as a 👍
+    else if (req) return askToVote(req, t);       // already on the list: offer a 👍 instead of a duplicate
     else addToList({ key, track: t });
     renderResults();
   }
@@ -430,7 +448,7 @@
     if (remove) { removeFromList(remove.dataset.remove); if (!results.hidden && tracks.length) renderResults(); return; }
     const li = e.target.closest('#results li[data-i]');
     if (li) return toggleTrack(tracks[+li.dataset.i]);
-    if (!e.target.closest('.search')) closeResults();
+    if (!e.target.closest('.search, dialog')) closeResults();   // the 👍 pop-up keeps the search open
   });
 
   function openManual() {
@@ -451,11 +469,8 @@
       return false;
     }
     const req = requestedByKey.get(serverKey(artist, title));
-    if (req && !req.mine && confirm(`"${title}" was already requested by ${req.count} ${req.count === 1 ? 'person' : 'people'}. Upvote it instead?`)) {
-      vote(req.key, msg);
-    } else if (!req?.mine) {
-      addToList({ key: keyOf({ artist, title }), artist, title });
-    }
+    if (req) askToVote(req, null);                // already on the list: offer a 👍 instead
+    else addToList({ key: keyOf({ artist, title }), artist, title });
     closeManual();
     return true;
   }
@@ -564,7 +579,7 @@
     });
     $('reqNone').hidden = shown.length > 0 || !requested.length;
     const medal = (r) => ['🥇', '🥈', '🥉'][r - 1];
-    $('requested').innerHTML = shown.map((s) => `<li>
+    $('requested').innerHTML = shown.map((s) => `<li data-key="${esc(s.key)}">
         <span class="rank ${medal(s.rank) ? 'medal' : ''}" aria-label="Number ${s.rank}">${medal(s.rank) || '#' + s.rank}</span>
         ${cover(s.track)}
         <div class="meta"><b>${esc(s.title)}${badge(s.track)}</b><span>${esc(s.artist)}${s.track?.genre ? ' · ' + esc(s.track.genre) : ''}</span></div>
@@ -587,14 +602,38 @@
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || 'Something went wrong.');
       try { localStorage.setItem('guestName', name); } catch {}
+      await loadRequested();
+      const rank = requested.findIndex((s) => s.key === key) + 1;
       out.className = out === msg ? 'ok' : 'hint';
-      out.textContent = song.mine ? `Took back your 👍 for "${song.title}".` : `👍 Added your vote for "${song.title}"!`;
+      out.textContent = song.mine ? `Took back your 👍 for "${song.title}".`
+        : `👍 Added your vote! "${song.title}" is now #${rank} with ${requestedByKey.get(key)?.count} 👍.`;
+      // Light up the song in the leaderboard so the new count is easy to spot.
+      const row = [...$('requested').children].find((li) => li.dataset.key === key);
+      if (row && !song.mine) { row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); }
+      if (!results.hidden && tracks.length) renderResults();
     } catch (err) {
       out.className = out === msg ? 'err' : 'hint err';
       out.textContent = err.message;
+      await loadRequested();
     }
-    await loadRequested();
   }
+
+  // A guest added a song that's already on the list: ask for a 👍 instead (once per song per guest).
+  function askToVote(req, track) {
+    const rank = requested.findIndex((s) => s.key === req.key) + 1;
+    $('vdCover').innerHTML = cover(req.track || track);
+    $('vdTitle').textContent = req.title;
+    $('vdArtist').textContent = req.artist;
+    $('vdText').textContent = req.mine
+      ? `You've already voted for this one. It's #${rank} with ${req.count} 👍, and everyone gets one vote per song.`
+      : `Already on the list at #${rank} with ${req.count} 👍. Add your vote instead of requesting it again?`;
+    $('vdYes').hidden = req.mine;
+    $('vdNo').textContent = req.mine ? 'OK' : 'Cancel';
+    $('vdYes').onclick = () => { $('voteDialog').close(); vote(req.key, msg); };
+    $('voteDialog').showModal();
+  }
+  $('vdNo').addEventListener('click', () => $('voteDialog').close());
+  $('voteDialog').addEventListener('click', (e) => { if (e.target === $('voteDialog')) $('voteDialog').close(); }); // tap outside
 
   $('reqFilter').addEventListener('input', renderRequested);
   $('reqToggle').addEventListener('click', () => {
