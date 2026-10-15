@@ -35,7 +35,7 @@ function fileStore() {
     fs.renameSync(DATA_FILE + '.tmp', DATA_FILE);
   };
   return {
-    list: async () => requests.map((r) => ({ ...r, track: r.track || null, voter: r.voter || '' })),
+    list: async () => requests.map((r) => ({ ...r, track: r.track || null, voter: r.voter || '', kind: r.kind || 'request' })),
     add: async (entry) => {
       requests.push(entry);
       save();

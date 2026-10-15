@@ -12,6 +12,7 @@ function d1Store(db) {
     name: r.name,
     note: r.note,
     voter: r.voter || '',
+    kind: r.kind || 'request',
     createdAt: r.created_at,
   });
   return {
@@ -21,8 +22,8 @@ function d1Store(db) {
     },
     async add(e) {
       await db
-        .prepare('INSERT INTO requests (id, artist, title, track, name, note, voter, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)')
-        .bind(e.id, e.artist, e.title, e.track ? JSON.stringify(e.track) : null, e.name, e.note, e.voter || '', e.createdAt)
+        .prepare('INSERT INTO requests (id, artist, title, track, name, note, voter, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)')
+        .bind(e.id, e.artist, e.title, e.track ? JSON.stringify(e.track) : null, e.name, e.note, e.voter || '', e.kind || 'request', e.createdAt)
         .run();
     },
     async remove(id) {

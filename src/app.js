@@ -297,6 +297,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
           name,
           note,
           voter,
+          kind: 'request',
           createdAt: new Date().toISOString(),
         };
       });
@@ -325,13 +326,16 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
     if (method === 'GET' && pathname === '/api/public/songs') {
       const voter = cleanVoter(url.searchParams.get('voter'));
       const requests = await store.list();
-      const mine = new Set(requests.filter((r) => voter && r.voter === voter).map((r) => songKey(r.artist, r.title)));
+      const mine = requests.filter((r) => voter && r.voter === voter);
+      const votedFor = new Set(mine.map((r) => songKey(r.artist, r.title)));
+      const requestedByMe = new Set(mine.filter((r) => r.kind !== 'vote').map((r) => songKey(r.artist, r.title)));
       return json(groupSongs(requests).map((s) => ({
         key: s.key,
         artist: s.artist,
         title: s.title,
         count: s.count,
-        mine: mine.has(s.key),
+        mine: votedFor.has(s.key),              // this phone asked for it or 👍'd it
+        requestedByMe: requestedByMe.has(s.key), // this phone requested it (that can't be taken back here)
         track: s.track && {
           source: s.track.source, id: s.track.id, album: s.track.album, artwork: s.track.artwork,
           explicit: s.track.explicit, clean: s.track.clean, genre: s.track.genre, previewUrl: s.track.previewUrl,
@@ -354,8 +358,11 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       if (!song) return json({ error: 'That song is no longer on the list.' }, 404);
       const mine = requests.filter((r) => r.voter === voter && songKey(r.artist, r.title) === song.key);
       if (body.remove) {
-        for (const r of mine) await store.remove(r.id);
-        return json({ ok: true, count: song.count - mine.length });
+        // Only a 👍 can be taken back; a song you requested stays on the list (the DJ can remove it).
+        const votes = mine.filter((r) => r.kind === 'vote');
+        if (!votes.length && mine.length) return json({ error: 'You requested this one, so it stays on the list.' }, 409);
+        for (const r of votes) await store.remove(r.id);
+        return json({ ok: true, count: song.count - votes.length });
       }
       if (mine.length) return json({ ok: true, count: song.count, already: true });
       const guest = await checkGuest(store, body.name, cleanVoter(body.voter), { requireGuestList });
@@ -364,7 +371,7 @@ export function createApp({ store, adminKey, eventName = 'The Party', musicCount
       if (rateLimited(submitBuckets, ip, maxPerGuestPerHour, 3600_000)) {
         return json({ error: 'Whoa, that is a lot of songs! Try again later.' }, 429);
       }
-      await store.add({ id: crypto.randomUUID(), artist: song.artist, title: song.title, track: song.track, name, note: '', voter, createdAt: new Date().toISOString() });
+      await store.add({ id: crypto.randomUUID(), artist: song.artist, title: song.title, track: song.track, name, note: '', voter, kind: 'vote', createdAt: new Date().toISOString() });
       return json({ ok: true, count: song.count + 1 }, 201);
     }
 

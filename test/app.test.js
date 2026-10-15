@@ -267,3 +267,17 @@ test('by default nobody can take part until the hosts add a guest list, then onl
   assert.strictEqual((await call('/api/requests', { songs: [{ artist: 'A', title: 'B' }], name: 'Adonis', voter: 'phone-adonis-1' })).status, 403);
   assert.strictEqual((await call('/api/requests', { songs: [{ artist: 'A', title: 'B' }], name: 'Jason', voter: 'phone-jason-1' })).status, 201);
 });
+
+test('a guest can take back a 👍 but not their own request', async () => {
+  await post({ songs: [{ artist: 'Kylie Minogue', title: 'Padam Padam' }], name: 'Gia', voter: 'phone-gia-12' });
+  const song = (await publicSongs('phone-gia-12')).find((s) => s.title === 'Padam Padam');
+  assert.deepStrictEqual([song.mine, song.requestedByMe], [true, true]);
+  const res = await vote({ key: song.key, voter: 'phone-gia-12', remove: true });
+  assert.strictEqual(res.status, 409);
+  assert.strictEqual((await publicSongs()).find((s) => s.title === 'Padam Padam').count, 1);
+
+  await vote({ key: song.key, voter: 'phone-hal-12', name: 'Hal' });
+  const forHal = (await publicSongs('phone-hal-12')).find((s) => s.title === 'Padam Padam');
+  assert.deepStrictEqual([forHal.count, forHal.mine, forHal.requestedByMe], [2, true, false]);
+  assert.strictEqual((await (await vote({ key: song.key, voter: 'phone-hal-12', remove: true })).json()).count, 1);
+});

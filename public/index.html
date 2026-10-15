@@ -625,7 +625,8 @@
         <div class="meta"><b>${esc(s.title)}${badge(s.track)}</b><span>${esc(s.artist)}${s.track?.genre ? ' · ' + esc(s.track.genre) : ''}</span></div>
         ${playButton(s.track, true)}
         <button type="button" class="vote ${s.mine ? 'voted' : ''}" data-vote="${esc(s.key)}"
-          aria-label="${s.mine ? 'Take back your vote' : 'Upvote'} (${s.count} so far)">👍 <b>${s.count}</b></button>
+          aria-label="${s.requestedByMe ? 'You requested this' : s.mine ? 'Take back your vote' : 'Upvote'} (${s.count} so far)"
+          title="${s.requestedByMe ? 'You requested this one' : s.mine ? 'Tap to take back your 👍' : 'Tap to 👍'}">👍 <b>${s.count}</b></button>
       </li>`).join('');
     syncPlayButtons();
   }
@@ -634,6 +635,11 @@
   async function vote(key, out) {
     const song = requestedByKey.get(key);
     if (!song) return;
+    if (song.requestedByMe) {       // your own request: its 👍 is yours and stays
+      out.className = out === msg ? 'ok' : 'hint';
+      out.textContent = `You requested "${song.title}", so it stays on the list 👍`;
+      return;
+    }
     const name = song.mine ? $('name').value.trim() : checkedName(out);
     if (!song.mine && !name) return;
     try {
