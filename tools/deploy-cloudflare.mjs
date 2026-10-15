@@ -69,7 +69,13 @@ function main() {
 
   say('4/5 Putting the app online');
   console.log('If asked to pick a workers.dev subdomain, choose a short name: it becomes part of your link.');
-  if (!wrangler(['deploy', '-c', DEPLOY_CONFIG]).ok) stop('Deploying failed. Run this again to retry.');
+  if (!wrangler(['deploy', '-c', DEPLOY_CONFIG]).ok) {
+    stop(`Deploying failed. If it said "You need to register a workers.dev subdomain":
+  1. Go to https://dash.cloudflare.com and open "Workers & Pages" (under "Compute" in the menu on the left).
+  2. Find "Subdomain" (*.workers.dev), click "Set up" or "Change", type a short name (e.g. stergiojim) and confirm.
+  3. Wait a minute, then run this again: the first steps are instant now.
+Otherwise, run this again to retry.`);
+  }
 
   say('5/5 Dashboard password');
   if (state.passwordSet) {
